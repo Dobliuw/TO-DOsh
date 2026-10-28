@@ -90,3 +90,8 @@ line two"
   td_err "kept"
   [ "$TD_LAST_ERROR" = kept ]
 }
+
+@test "project validator lives next to the name validator" {
+  td_valid_project "a/b c"
+  refute td_valid_name "a/b c"
+}

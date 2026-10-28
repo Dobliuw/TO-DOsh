@@ -14,10 +14,12 @@
 | `lib/commands.sh` | Task commands: argument parsing and text/JSON presentation |
 | `lib/dates.sh` | Due-date parsing, durations, jq helpers for relative dates |
 | `lib/focus.sh` | The focused task and its work sessions |
+| `lib/projects.sh` | Project paths, the project registry and the project tree |
 | `lib/theme.sh` | Themes, terminal color tiers, kitty import |
 | `lib/tui_ui.sh` | TUI building blocks: line composition, layers, keys, text editing, dialogs, pickers, forms |
 | `lib/tui.sh` | The interface: screen, details, actions, task form, palette, settings |
 | `themes/` | Built-in themes (`key = #rrggbb`) |
+| `banners/` | Built-in title art for the TUI banner (`big.txt`, `small.txt`) |
 | `tests/` | bats test suites; `test_helper.bash` isolates each test |
 
 The CLI and the TUI must only call business functions (`tasks.sh`, later

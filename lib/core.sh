@@ -84,9 +84,26 @@ td_valid_priority() {
   td_in_list "$1" "${TD_PRIORITIES[@]}"
 }
 
-# Project and tag names: short, shell- and filename-friendly.
+# Tag and theme names: short, shell- and filename-friendly.
 td_valid_name() {
   [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$ ]]
+}
+
+# Projects are paths of up to 4 segments ("HardwareHacking/RF & SDR"). A
+# segment: 1-32 characters, no "/", no control characters, no leading or
+# trailing space, not "." or "..". Spaces and symbols are fine: names are
+# never used as file names.
+td_valid_project() {
+  local path=$1 seg
+  local -a segs
+  [[ -n $path && $path != /* && $path != */ && $path != *//* ]] || return 1
+  [[ $path != *[[:cntrl:]]* ]] || return 1
+  IFS=/ read -ra segs <<<"$path"
+  ((${#segs[@]} <= 4)) || return 1
+  for seg in "${segs[@]}"; do
+    ((${#seg} >= 1 && ${#seg} <= 32)) || return 1
+    [[ $seg != " "* && $seg != *" " && $seg != . && $seg != .. ]] || return 1
+  done
 }
 
 # Titles: non-empty, single line, no control characters, <= 200 characters.

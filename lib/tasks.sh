@@ -65,6 +65,13 @@ _td_validate_due() {
   fi
 }
 
+_td_validate_project() {
+  if ! td_valid_project "$1"; then
+    td_err "invalid project: '$1' (up to 4 levels like a/b, 1-32 characters each, no control characters)"
+    return "$TD_E_USAGE"
+  fi
+}
+
 _td_validate_title() {
   if ! td_valid_title "$1"; then
     td_err "invalid title: must be one line of 1-200 characters"
@@ -136,7 +143,7 @@ td_task_add() {
   shift 6
   TD_RESULT=""
   _td_validate_title "$title" || return
-  [[ -n $project ]] && { _td_validate_names project "$project" || return; }
+  [[ -n $project ]] && { _td_validate_project "$project" || return; }
   (($#)) && { _td_validate_names tag "$@" || return; }
   if ! td_valid_priority "$priority"; then
     td_err "invalid priority: '$priority' (urgent, high, med, low)"
@@ -200,7 +207,7 @@ td_task_edit() {
           return "$TD_E_USAGE"
         }
         ;;
-      project) _td_validate_names project "${_td_ch[project]}" || return ;;
+      project) _td_validate_project "${_td_ch[project]}" || return ;;
       due) _td_validate_due "${_td_ch[due]}" || return ;;
       parent)
         [[ ${_td_ch[parent]} == none ]] || _td_validate_ids "${_td_ch[parent]}" || return
@@ -587,7 +594,8 @@ _td_task_purge_locked() {
 # "subtasks": {"done": N, "total": M} (cancelled subtasks are not counted).
 #
 # FILTER_JSON keys (all optional):
-#   statuses, priorities, projects: arrays (match any); tags: array (match all)
+#   statuses, priorities: arrays (match any); tags: array (match all)
+#   projects: array (match any, including subprojects: "a" matches "a/b")
 #   parent: ID (only its subtasks); text: case-insensitive substring of title
 #   overdue: true (only open tasks due before today)
 #   visibility: "default" (open + closed within archive_days), "open", "all"
@@ -612,7 +620,8 @@ td_tasks_select() {
     def matches:
       visible
       and (($f.priorities // []) as $p | $p == [] or (.priority | IN($p[])))
-      and (($f.projects // []) as $p | $p == [] or (.project | IN($p[])))
+      and (($f.projects // []) as $p | $p == []
+           or (.project as $tp | any($p[]; . as $q | $tp == $q or ($tp | startswith($q + "/")))))
       and (($f.tags // []) as $t | $t - .tags == [])
       and ($f.parent == null or .parent == $f.parent)
       and (($f.text // "") as $q | $q == ""

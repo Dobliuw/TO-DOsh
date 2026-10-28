@@ -20,7 +20,9 @@ declare -grA TD_TUI_VIEW_LABEL=([active]=Active [all]=All [overdue]=Overdue [blo
 
 # Rows of the list: parallel arrays, one entry per visible row.
 declare -ga U_KIND=() U_GROUP=() U_DEPTH=() U_ID=() U_STATUS=() U_PRIO=() U_DUE=()
-declare -ga U_DUESTATE=() U_PROG=() U_TAGS=() U_FOCUS=() U_TITLE=() U_LAST=()
+declare -ga U_DUESTATE=() U_PROG=() U_TAGS=() U_FOCUS=() U_TITLE=() U_LAST=() U_LEVEL=()
+# The project tree (td_projects_tree), refreshed on reload.
+TUI_TREE="[]"
 declare -gA TUI_COLLAPSED=()
 declare -ga TUI_DETAIL=()
 
@@ -43,7 +45,7 @@ declare -gA TUI_KEYMAP=(
   ["e"]=edit ["E"]=notes ["c"]=comment ["space"]=toggle_done ["s"]=start
   ["b"]=block ["d"]="done" ["x"]=cancel ["r"]=reopen ["p"]=priority
   ["+"]=prio_up ["="]=prio_up ["-"]=prio_down ["m"]=move ["t"]=tags
-  ["f"]=focus ["D"]=delete ["delete"]=delete ["u"]=undo ["/"]=filter
+  ["P"]=new_project ["f"]=focus ["D"]=delete ["delete"]=delete ["u"]=undo ["/"]=filter
   ["tab"]=next_view ["btab"]=prev_view ["1"]=view_active ["2"]=view_all
   ["3"]=view_overdue ["4"]=view_blocked [":"]=palette [","]=settings
   ["?"]=help ["ctrl-l"]=redraw ["q"]=quit ["ctrl-c"]=quit ["ctrl-z"]=suspend
@@ -175,27 +177,39 @@ _tui_reload() {
        else {visibility: "default"} end)')
   rows=$(td_tasks_select "$filter") || rows="[]"
 
-  U_KIND=() U_GROUP=() U_DEPTH=() U_ID=() U_STATUS=() U_PRIO=() U_DUE=()
+  # Projects form a tree; the active view without a filter shows every
+  # project (empty ones too), other views only those with matching tasks.
+  local all_nodes=false
+  [[ $TUI_VIEW == active && -z $TUI_FILTER ]] && all_nodes=true
+  TUI_TREE=$(td_projects_tree) || TUI_TREE="[]"
+
+  U_KIND=() U_GROUP=() U_LEVEL=() U_DEPTH=() U_ID=() U_STATUS=() U_PRIO=() U_DUE=()
   U_DUESTATE=() U_PROG=() U_TAGS=() U_FOCUS=() U_TITLE=() U_LAST=()
-  local kind group depth id status prio due dstate prog tags foc last title
-  while IFS=$'\x1f' read -r kind group depth id status prio due dstate prog tags foc last title; do
-    [[ $kind == T && -v TUI_COLLAPSED[$group] ]] && continue
-    U_KIND+=("$kind") U_GROUP+=("$group") U_DEPTH+=("$depth") U_ID+=("$id")
+  local kind group level depth id status prio due dstate prog tags foc last title
+  while IFS=$'\x1f' read -r kind group level depth id status prio due dstate prog tags foc last title; do
+    if [[ $kind == G ]]; then
+      _tui_collapsed "$group" 0 && continue
+    else
+      _tui_collapsed "$group" 1 && continue
+    fi
+    U_KIND+=("$kind") U_GROUP+=("$group") U_LEVEL+=("$level") U_DEPTH+=("$depth") U_ID+=("$id")
     U_STATUS+=("$status") U_PRIO+=("$prio") U_DUE+=("$due") U_DUESTATE+=("$dstate")
     U_PROG+=("$prog") U_TAGS+=("$tags") U_FOCUS+=("$foc") U_LAST+=("$last") U_TITLE+=("$title")
-  done < <(LC_TIME=C jq -r --arg today "$today" --arg focus "$TUI_FOCUS" "$TD_JQ_DUE"'
+  done < <(LC_TIME=C jq -r --arg today "$today" --arg focus "$TUI_FOCUS" \
+    --argjson tree "$TUI_TREE" --argjson all_nodes "$all_nodes" "$TD_JQ_DUE"'
     (map(.id)) as $ids
     | (map({key: (.id | tostring), value: .project}) | from_entries) as $proj
     | [.[] | . + (if .parent != null and (.parent | IN($ids[]))
                   then {grp: $proj[.parent | tostring], depth: 1}
                   else {grp: .project, depth: 0} end)] as $rows
-    | ($rows | map(.grp) | unique | sort_by(if . == "inbox" then "" else . end))[] as $g
-    | ($rows | map(select(.grp == $g))) as $items
-    | (["G", $g, 0, "", "", "", "", "",
-        "\($items | map(select(.status == "DONE")) | length)/\($items | map(select(.status != "CANCELLED")) | length)",
-        "", 0, 0, ""] | map(tostring) | join("\u001f")),
+    | ($rows | map(.grp) | unique) as $used
+    | (if $all_nodes then $tree
+       else [$tree[] | .path as $p | select(any($used[]; . == $p or startswith($p + "/")))] end)[] as $node
+    | ($rows | map(select(.grp == $node.path))) as $items
+    | (["G", $node.path, $node.depth, 0, "", "", "", "", "", "\($node.done)/\($node.total)",
+        "", 0, 0, $node.name] | map(tostring) | join("\u001f")),
       ($items | to_entries[] | .key as $k | .value | due_info as $d
-       | ["T", $g, .depth, .id, .status, .priority, ($d.text // ""), ($d.state // ""),
+       | ["T", $node.path, $node.depth, .depth, .id, .status, .priority, ($d.text // ""), ($d.state // ""),
           (if .subtasks then "\(.subtasks.done)/\(.subtasks.total)" else "" end),
           (.tags | map("#" + .) | join(" ")),
           (if (.id | tostring) == $focus then 1 else 0 end),
@@ -219,6 +233,20 @@ _tui_reload() {
     fi
   done
   TUI_DETAIL_KEY=""
+}
+
+# _tui_collapsed PATH SELF — succeed when PATH is hidden by a collapsed project:
+# one of its parents, or (SELF=1) the project itself.
+_tui_collapsed() {
+  local path=$1 acc="" seg
+  local -a segs
+  IFS=/ read -ra segs <<<"$path"
+  for seg in "${segs[@]}"; do
+    acc+=${acc:+/}$seg
+    [[ $acc == "$path" && $2 == 0 ]] && return 1
+    [[ -v TUI_COLLAPSED[$acc] ]] && return 0
+  done
+  return 1
 }
 
 # --- main screen -----------------------------------------------------------------
@@ -412,11 +440,17 @@ _tui_list_line() {
     _tl_add "" " "
   fi
 
+  # Subprojects (and their tasks) are indented by their level.
+  _tl_gap $((2 * ${U_LEVEL[i]:-0}))
   if [[ ${U_KIND[i]} == G ]]; then
     local mark=${TD_SYM[down]} ndone=${U_PROG[i]%/*} total=${U_PROG[i]#*/} bar
     [[ -v TUI_COLLAPSED[${U_GROUP[i]}] ]] && mark=${TD_SYM[right]}
     _tl_add "${TD_TC[accent]}" " $mark "
-    _tl_add "${TD_TC[accent]}${TD_TC[bold]}" "${U_GROUP[i]}"
+    if ((${U_LEVEL[i]:-0} > 0)); then
+      _tl_add "${TD_TC[magenta]}${TD_TC[bold]}" "${U_TITLE[i]}"
+    else
+      _tl_add "${TD_TC[accent]}${TD_TC[bold]}" "${U_TITLE[i]}"
+    fi
     _tui_bar bar "$ndone" "$total" 6
     _tl_right $((${#bar} + ${#U_PROG[i]} + 3))
     _tl_add "${TD_TC[green]}" "$bar"
@@ -535,12 +569,171 @@ _tui_detail_build() {
   else
     _tui_detail_task "${U_ID[TUI_SEL]:-}" "$height"
   fi
+  _tui_banner_place "$height"
   return 0
+}
+
+# --- banner --------------------------------------------------------------------
+# Logo + title art + tagline at the bottom of the details panel, when there is
+# room. Built once per width/theme (it may run chafa) and cached in TUI_BANNER.
+
+declare -ga TUI_BANNER=()
+TUI_BANNER_KEY=""
+
+# _tui_banner_place HEIGHT — append the banner at the bottom of TUI_DETAIL.
+_tui_banner_place() {
+  ((TUI_DIM)) && return 0
+  _tui_banner_build "$TUI_DW"
+  local n=${#TUI_BANNER[@]} free=$(($1 - ${#TUI_DETAIL[@]}))
+  ((n > 0 && free >= n + 2)) || return 0
+  while ((${#TUI_DETAIL[@]} < $1 - n - 1)); do _tui_dl_blank; done
+  TUI_DETAIL+=("${TUI_BANNER[@]}")
+}
+
+# _tui_expand_path PATH — PATH with a leading ~/ expanded (no eval).
+_tui_expand_path() {
+  if [[ $1 == \~/* ]]; then
+    printf '%s\n' "$HOME/${1#\~/}"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+# _tui_banner_art WIDTH — print the title art lines that fit WIDTH.
+_tui_banner_art() {
+  local width=$1 choice=${TD_CONF[banner]:-auto} file="" line max=0
+  local -a lines=()
+  case $choice in
+    none) return 0 ;;
+    big | small) file=$TD_SHARE_DIR/banners/$choice.txt ;;
+    auto) file=$TD_SHARE_DIR/banners/big.txt ;;
+    *) file=$(_tui_expand_path "$choice") ;;
+  esac
+  [[ -f $file && -r $file ]] || return 0
+  mapfile -t lines <"$file"
+  for line in "${lines[@]}"; do ((${#line} > max)) && max=${#line}; done
+  # auto: the big art when it fits, else the small one.
+  if ((max > width)) && [[ $choice == auto ]]; then
+    mapfile -t lines <"$TD_SHARE_DIR/banners/small.txt"
+    max=0
+    for line in "${lines[@]}"; do ((${#line} > max)) && max=${#line}; done
+  fi
+  ((max <= width)) || return 0
+  # Box-drawing art needs Unicode.
+  if ((! TD_UNICODE)) && [[ ${lines[*]} == *[─│┌┐└┘┬┴├┤]* ]]; then
+    printf 'TODOSH\n'
+    return 0
+  fi
+  printf '%s\n' "${lines[@]}"
+}
+
+# _tui_logo_lines HEIGHT — print the logo (text file, or image through chafa)
+# at most HEIGHT rows tall. Image renders are cached on disk.
+_tui_logo_lines() {
+  local rows=$1 file
+  [[ -n ${TD_CONF[logo]:-} ]] || return 0
+  file=$(_tui_expand_path "${TD_CONF[logo]}")
+  [[ -f $file && -r $file ]] || return 0
+  case ${file,,} in
+    *.png | *.jpg | *.jpeg | *.gif | *.webp | *.bmp)
+      command -v chafa >/dev/null 2>&1 || return 0
+      local cache=${XDG_CACHE_HOME:-$HOME/.cache}/todosh key colors=full
+      ((TD_TIER == 2)) && colors=256
+      ((TD_TIER <= 1)) && colors=16
+      key=$(stat -c '%s-%Y' -- "$file" 2>/dev/null)-$rows-$colors-${TD_THEME[bg]#\#}
+      key=$(printf '%s %s' "$file" "$key" | cksum)
+      key=${key%% *}
+      if [[ ! -f $cache/logo-$key.ans ]]; then
+        mkdir -p -- "$cache" 2>/dev/null || return 0
+        chafa --format=symbols --colors="$colors" --size=$((rows * 2))x"$rows" \
+          --bg="${TD_THEME[bg]}" --animate=off -- "$file" >"$cache/logo-$key.ans" 2>/dev/null || {
+          rm -f -- "$cache/logo-$key.ans"
+          return 0
+        }
+      fi
+      # Keep only colors: drop cursor and mode sequences chafa may add.
+      local line
+      while IFS= read -r line; do
+        line=${line//$'\e[?'*([0-9;])[a-zA-Z]/}
+        printf '%s\n' "$line"
+      done <"$cache/logo-$key.ans"
+      ;;
+    *) head -n "$rows" -- "$file" ;;
+  esac
+}
+
+_tui_banner_build() {
+  local width=$1 key="$1:${TD_THEME_NAME}:$TD_TIER:${TD_CONF[banner]}:${TD_CONF[logo]}:${TD_CONF[tagline]}"
+  [[ $key == "$TUI_BANNER_KEY" ]] && return 0
+  TUI_BANNER_KEY=$key
+  TUI_BANNER=()
+  ((width >= 24)) || return 0
+
+  local -a art=() logo=()
+  local line lw=0 aw=0 i n
+  mapfile -t logo < <(_tui_logo_lines 8)
+  for line in "${logo[@]}"; do
+    local plain=${line//$'\e['*([0-9;])m/}
+    ((${#plain} > lw)) && lw=${#plain}
+  done
+  ((lw > width / 3)) && logo=() lw=0
+  local room=$((width - 4 - (lw ? lw + 3 : 0)))
+  mapfile -t art < <(_tui_banner_art "$room")
+  for line in "${art[@]}"; do ((${#line} > aw)) && aw=${#line}; done
+  local tagline=${TD_CONF[tagline]:-}
+  td_truncate tagline "$tagline" $((width - 4))
+  ((${#art[@]} + ${#logo[@]})) || [[ -n $tagline ]] || return 0
+
+  # Title art fades from the accent color to magenta, line by line.
+  local -a colors=()
+  n=${#art[@]}
+  for ((i = 0; i < n; i++)); do
+    if ((TD_TIER >= 2 && n > 1)); then
+      local hex rgb
+      hex=$(td_hex_mix "${TD_THEME[accent]}" "${TD_THEME[magenta]}" $((100 * i / (n - 1))))
+      if ((TD_TIER == 3)); then
+        rgb=$(_td_rgb "$hex")
+        colors+=($'\e[38;2;'"${rgb}m")
+      else
+        colors+=($'\e[38;5;'"$(td_hex_to_256 "$hex")m")
+      fi
+    else
+      colors+=("${TD_TC[accent]}")
+    fi
+  done
+
+  local rows=$((${#art[@]} > ${#logo[@]} ? ${#art[@]} : ${#logo[@]}))
+  local block=$(((lw ? lw + 3 : 0) + aw))
+  local left=$((width - block - 2))
+  ((left < 2)) && left=2
+  local r plain
+  for ((r = 0; r < rows; r++)); do
+    _tl_start "$width"
+    _tl_gap "$left"
+    if ((lw)); then
+      line=${logo[r]:-}
+      plain=${line//$'\e['*([0-9;])m/}
+      # Pre-colored text: appended as is, counted by its visible width.
+      TL+=$TLBASE$line$TLBASE
+      TLW=$((TLW + ${#plain}))
+      _tl_gap $((lw - ${#plain} + 3))
+    fi
+    [[ -n ${art[r]:-} ]] && _tl_add "${colors[r]}${TD_TC[bold]}" "${art[r]}"
+    _tl_end
+    TUI_BANNER+=("$TL")
+  done
+  if [[ -n $tagline ]]; then
+    _tl_start "$width"
+    _tl_gap $((width - ${#tagline} - 2))
+    _tl_add "${TD_TC[muted]}${TD_TC[italic]}" "$tagline"
+    _tl_end
+    TUI_BANNER+=("$TL")
+  fi
 }
 
 _tui_detail_group() {
   local g=$1 counts ndone total ip blocked todo bar
-  counts=$(jq -r --arg g "$g" '[.[] | select(.project == $g)] as $t
+  counts=$(jq -r --arg g "$g" '[.[] | select(.project == $g or (.project | startswith($g + "/")))] as $t
     | [($t | map(select(.status == "DONE")) | length),
        ($t | map(select(.status != "CANCELLED")) | length),
        ($t | map(select(.status == "IN_PROGRESS")) | length),
@@ -551,7 +744,14 @@ _tui_detail_group() {
   _tl_add "${TD_TC[accent]}" "${TD_SYM[project]} "
   _tl_add "${TD_TC[fg]}${TD_TC[bold]}" "$g"
   _tui_dl_end
-  _tui_dl_text "${TD_TC[muted]}" "Project"
+  if [[ $g == */* ]]; then
+    _tui_dl_text "${TD_TC[muted]}" "Subproject of ${g%/*}"
+  else
+    _tui_dl_text "${TD_TC[muted]}" "Project"
+  fi
+  local subs
+  subs=$(jq -r --arg g "$g" '[.[] | select(.path | startswith($g + "/")) | select((.path | split("/") | length) == ($g | split("/") | length) + 1) | .name] | join(", ")' <<<"$TUI_TREE")
+  [[ -n $subs ]] && _tui_dl_text "${TD_TC[magenta]}" "${TD_SYM[project]} $subs"
   _tui_dl_blank
   _tui_bar bar "$ndone" "$total" $((TUI_DW > 34 ? 24 : TUI_DW - 10))
   _tui_dl_start
@@ -567,7 +767,7 @@ _tui_detail_group() {
   _tl_pill bg muted "${TD_SYM[TODO]} $todo to do"
   _tui_dl_end
   _tui_dl_blank
-  _tui_dl_text "${TD_TC[muted]}" "Space or Enter: collapse / expand · n: new task here"
+  _tui_dl_text "${TD_TC[muted]}" "Space: collapse · n: task · P: subproject"
 }
 
 _tui_detail_task() {
@@ -790,6 +990,29 @@ _tui_action() {
       fi
       ;;
     new) _tui_task_form new "" ;;
+    new_project)
+      local base=${U_GROUP[TUI_SEL]:-}
+      if _tui_input "New project" "Name (use / for subprojects)" "${base:+$base/}" \
+        "e.g. HardwareHacking/RF & SDR"; then
+        local name=${TUI_INPUT%/}
+        td_project_add "$name" || rc=$?
+        if ((rc == 0)); then
+          unset "TUI_COLLAPSED[${name%/*}]"
+          _tui_reload
+          _tui_select_group "$name"
+          _tui_toast ok "Project $name created"
+        else
+          _tui_toast error "$TD_LAST_ERROR"
+        fi
+      fi
+      ;;
+    remove_project)
+      local g=${U_GROUP[TUI_SEL]:-}
+      [[ -n $g ]] || return 0
+      _tui_confirm "Remove the empty project $g?" "Remove" || return 0
+      td_project_remove "$g" || rc=$?
+      _tui_done "$rc" "Project $g removed"
+      ;;
     new_sub)
       [[ -n $id ]] || return 0
       local parent
@@ -850,12 +1073,12 @@ _tui_action() {
       TUI_PICK_INIT=$(jq -r --argjson id "$id" '.[] | select(.id == $id) | .project' <<<"$TUI_IDX")
       PK_CREATE=1
       if _tui_pick "Move #$id to project" "${TUI_ITEMS[@]}"; then
-        if td_valid_name "$TUI_PICKED"; then
+        if td_valid_project "$TUI_PICKED"; then
           local -A ch=([project]=$TUI_PICKED)
           td_task_edit "$id" ch || rc=$?
           _tui_done "$rc" "Moved to $TUI_PICKED"
         else
-          _tui_toast error "Project names: letters, digits, . _ - (max 32)"
+          _tui_toast error "Invalid project (up to 4 levels like a/b, 1-32 characters each)"
         fi
       fi
       ;;
@@ -1023,16 +1246,16 @@ _tui_filter_key() {
 
 declare -ga TUI_ITEMS=()
 
+# Projects in tree order, subprojects indented; the value is the full path.
 _tui_projects_items() {
   TUI_ITEMS=()
-  local p c
-  while IFS=$'\t' read -r p c; do
-    TUI_ITEMS+=("$p"$'\x1f'"${TD_SYM[project]} $p"$'\x1f'"$c open"$'\x1f')
+  local path name depth open pad
+  while IFS=$'\x1f' read -r path name depth open; do
+    printf -v pad '%*s' $((2 * depth)) ''
+    TUI_ITEMS+=("$path"$'\x1f'"$pad${TD_SYM[project]} $name"$'\x1f'"$open open"$'\x1f')
   done < <(jq -r --arg def "${TD_CONF[default_project]}" '
-    (group_by(.project) | map({key: .[0].project,
-      value: (map(select(.status | IN("TODO", "IN_PROGRESS", "BLOCKED"))) | length)}) | from_entries)
-    + (if any(.[]; .project == $def) then {} else {($def): 0} end)
-    | to_entries | sort_by(-.value, .key)[] | "\(.key)\t\(.value)"' <<<"$TUI_IDX")
+    (if any(.[]; .path == $def) then . else . + [{path: $def, name: $def, depth: 0, open: 0}] end)[]
+    | [.path, .name, .depth, .open] | map(tostring) | join("\u001f")' <<<"$TUI_TREE")
 }
 
 _tui_tags_items() {
@@ -1159,8 +1382,8 @@ _tui_task_form_save() {
     F_ERR="A title is required (one line, up to 200 characters)" F_ERR_FIELD=title
     return 1
   fi
-  if ! td_valid_name "${F_VAL[project]}"; then
-    F_ERR="Project names: letters, digits, . _ - (max 32)" F_ERR_FIELD=project
+  if ! td_valid_project "${F_VAL[project]}"; then
+    F_ERR="Invalid project (up to 4 levels like a/b, 1-32 characters each)" F_ERR_FIELD=project
     return 1
   fi
   for t in ${F_VAL[tags]}; do
@@ -1236,7 +1459,7 @@ _tui_palette() {
   local -a items=()
   local entry a label key
   for entry in \
-    "new|New task|n" "new_sub|New subtask|N" "edit|Edit task|e" "notes|Edit notes in editor|E" \
+    "new|New task|n" "new_sub|New subtask|N" "new_project|New project / subproject|P" "remove_project|Remove empty project|" "edit|Edit task|e" "notes|Edit notes in editor|E" \
     "comment|Add a comment|c" "toggle_done|Done / reopen|space" "start|Start|s" "block|Block|b" \
     "cancel|Cancel task|x" "reopen|Reopen|r" "priority|Change priority|p" "move|Move to project|m" \
     "tags|Edit tags|t" "focus|Focus / release focus|f" "delete|Delete task|D" "undo|Undo delete|u" \
@@ -1267,7 +1490,12 @@ _tui_settings() {
   _tui_form_add archive_after_days text "Archive" "${TD_CONF[archive_after_days]}" "" \
     "days before done tasks leave Active (0 = never)"
   _tui_form_add default_project text "Project" "${TD_CONF[default_project]}" "" "default project for new tasks"
-  _tui_form_add editor text "Editor" "${TD_CONF[editor]}" "" "\$VISUAL / \$EDITOR"
+  _tui_form_add editor text "Editor" "${TD_CONF[editor]}" "" "\$VISUAL / \$EDITOR, else nvim, vim, nano"
+  local banner=${TD_CONF[banner]}
+  td_in_list "$banner" auto big small none || banner=auto
+  _tui_form_add banner segment "Banner" "$banner" "auto big small none"
+  _tui_form_add logo text "Logo" "${TD_CONF[logo]}" "" "path, e.g. ~/logo.png (needs chafa) or ~/logo.txt"
+  _tui_form_add tagline text "Tagline" "${TD_CONF[tagline]}" "" "one line under the title"
   _tui_form_add save button "Save" "" submit
   _tui_form_add cancel button "Cancel" "" cancel
   if ! _tui_form_run; then
@@ -1301,13 +1529,13 @@ _tui_preview_theme() {
 
 _tui_settings_save() {
   local key
-  for key in theme icons color background archive_after_days default_project editor; do
+  for key in theme icons color background archive_after_days default_project editor banner logo tagline; do
     if ! td_config_valid "$key" "${F_VAL[$key]}"; then
       F_ERR="Invalid value for ${F_LABEL[$key],,}: '${F_VAL[$key]}'" F_ERR_FIELD=$key
       return 1
     fi
   done
-  for key in theme icons color background archive_after_days default_project editor; do
+  for key in theme icons color background archive_after_days default_project editor banner logo tagline; do
     [[ ${F_VAL[$key]} == "${F_ORIG[$key]}" && $key != theme ]] && continue
     if ! td_config_set "$key" "${F_VAL[$key]}"; then
       F_ERR=$TD_LAST_ERROR F_ERR_FIELD=$key
@@ -1336,6 +1564,7 @@ _tui_help() {
     "key${S}  c            ${K}comment" \
     "key${S}  p  + -       ${K}priority (pick, raise, lower)" \
     "key${S}  m  t         ${K}move to project · tags" \
+    "key${S}  P            ${K}new project or subproject (a/b)" \
     "key${S}  D  u         ${K}delete · undo" \
     "${S}" "head${S}Status and focus" \
     "key${S}  Space        ${K}done / reopen" \

@@ -45,6 +45,8 @@ install:
 	install -m 0755 bin/todosh "$(DESTDIR)$(BINDIR)/todosh"
 	install -m 0644 lib/*.sh "$(DESTDIR)$(LIBDIR)/"
 	install -m 0644 themes/*.theme "$(DESTDIR)$(SHAREDIR)/themes/"
+	install -d -m 0755 "$(DESTDIR)$(SHAREDIR)/banners"
+	install -m 0644 banners/*.txt "$(DESTDIR)$(SHAREDIR)/banners/"
 	ln -sfn todosh "$(DESTDIR)$(BINDIR)/tdsh"
 	@printf 'Installed todosh (and tdsh) to %s\n' "$(DESTDIR)$(BINDIR)"
 
@@ -54,6 +56,7 @@ uninstall:
 	rm -f $(patsubst lib/%,"$(DESTDIR)$(LIBDIR)/%",$(wildcard lib/*.sh))
 	-rmdir "$(DESTDIR)$(LIBDIR)" 2>/dev/null
 	rm -f $(patsubst themes/%,"$(DESTDIR)$(SHAREDIR)/themes/%",$(wildcard themes/*.theme))
-	-rmdir "$(DESTDIR)$(SHAREDIR)/themes" "$(DESTDIR)$(SHAREDIR)" 2>/dev/null
+	rm -f $(patsubst banners/%,"$(DESTDIR)$(SHAREDIR)/banners/%",$(wildcard banners/*.txt))
+	-rmdir "$(DESTDIR)$(SHAREDIR)/themes" "$(DESTDIR)$(SHAREDIR)/banners" "$(DESTDIR)$(SHAREDIR)" 2>/dev/null
 	@printf 'Removed program files. Your tasks and config were not touched:\n'
 	@printf '  %s\n  %s\n' "$${XDG_DATA_HOME:-$$HOME/.local/share}/todosh" "$${XDG_CONFIG_HOME:-$$HOME/.config}/todosh"

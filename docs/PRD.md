@@ -155,3 +155,13 @@ translations.
   transparency; view tabs, badges, progress bars, subtask trees, activity
   timeline; Nerd Font icon set (`icons = nerd`). Ctrl-C/Ctrl-Z are keys
   (terminal in -isig mode). The CLI is unchanged.
+- 2026-10-28 — Subprojects: a project is a path (`HardwareHacking/RF & SDR`,
+  up to 4 levels; spaces and symbols allowed in project names). Filters include
+  subprojects. `projects.json` keeps explicitly created (possibly empty)
+  projects; `todosh project add|list|remove`. The TUI shows projects as a
+  collapsible tree with aggregated progress; `P` creates a subproject.
+- 2026-10-28 — Editor fallback: config, $VISUAL, $EDITOR, then the first of
+  nvim, vim, nano, vi. `todosh config get|set`.
+- 2026-10-28 — Banner in the TUI details panel when there is room: title art
+  (`banner = auto|big|small|none|FILE`), optional logo (`logo = FILE`, text or
+  image rendered by the optional `chafa`), `tagline`.

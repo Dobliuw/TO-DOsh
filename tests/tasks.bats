@@ -42,7 +42,7 @@ field() { jq -r "$2" "$TD_DATA_DIR/${3:-tasks}/$1.json"; }
   [ "$status" -eq 2 ]
   run td_task_add $'two\nlines' inbox med "" "" ""
   [ "$status" -eq 2 ]
-  run td_task_add ok "bad project" med "" "" ""
+  run td_task_add ok "bad//project" med "" "" ""
   [ "$status" -eq 2 ]
   run td_task_add ok inbox highest "" "" ""
   [ "$status" -eq 2 ]

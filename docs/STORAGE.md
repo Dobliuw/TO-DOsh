@@ -5,6 +5,8 @@ TODOSH keeps all data as plain JSON files in one directory:
 ```
 ${TODOSH_DATA_DIR:-${XDG_DATA_HOME:-~/.local/share}/todosh}/
 ├── meta.json        {"schema": 1, "next_id": 43, "created": "..."}
+├── projects.json    {"projects": ["HardwareHacking", "HardwareHacking/RF & SDR"]}
+├── focus.json       {"task": 42, "since": "..."}
 ├── tasks/42.json    one file per task
 ├── trash/17.json    soft-deleted tasks (same format)
 ├── backups/
@@ -83,7 +85,8 @@ a corrupted file is reported by name rather than silently skipped.
 |---|---|
 | `status` | `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `CANCELLED` |
 | `priority` | `urgent`, `high`, `med`, `low` |
-| `project`, `tags[]` | `[A-Za-z0-9][A-Za-z0-9._-]{0,31}`; tags are kept sorted and unique |
+| `project` | A path of up to 4 segments, e.g. `HardwareHacking/RF & SDR` (subprojects). Segments: 1-32 characters, no `/` or control characters |
+| `tags[]` | `[A-Za-z0-9][A-Za-z0-9._-]{0,31}`; kept sorted and unique |
 | `parent` | ID of the parent task, or `null`. Subtasks are one level deep |
 | `due` | Local calendar date `YYYY-MM-DD`, or `null` |
 | `closed` | When the task became `DONE`/`CANCELLED`; `null` while open |
@@ -94,6 +97,13 @@ History entries are append-only and `at` is always when the entry was recorded.
 `since` = start, `seconds` = length) or `event` (recorded automatically):
 `created`, `status` (`from`/`to`), `edit` (`field`, plus `from`/`to` except for
 `description`), `deleted`, `restored`.
+
+## Projects (`projects.json`)
+
+A project exists while a task uses it. `projects.json` also lists projects
+created explicitly (`todosh project add`), so empty ones are kept; adding a
+subproject registers its parents too. Removing a project is refused while any
+task (live or trashed) belongs to it or to a subproject.
 
 ## Focus (`focus.json`)
 

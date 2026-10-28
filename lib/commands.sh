@@ -147,7 +147,8 @@ td_help_add() {
     "Usage: todosh add [options] <title words...>" \
     "" \
     "Options:" \
-    "  --project NAME       Project (default: the parent's, else config" \
+    "  --project PATH       Project; subprojects are paths: 'Hacking/RF & SDR'" \
+    "                       (default: the parent's, else config" \
     "                       'default_project', which defaults to inbox)" \
     "  --priority LEVEL     urgent | high | med | low (default: med)" \
     "  --tag NAME           Add a tag (repeatable)" \
@@ -243,7 +244,8 @@ td_help_list() {
     "  -o, --open          Only open tasks (TODO, IN_PROGRESS, BLOCKED)" \
     "  --overdue           Only open tasks past their due date" \
     "  --status LIST       Only these statuses (comma-separated, e.g. todo,blocked)" \
-    "  --project NAME      Filter by project (repeatable)       shorthand: p:NAME" \
+    "  --project NAME      Filter by project and its subprojects (repeatable)" \
+    "                      shorthand: p:NAME, e.g. p:HardwareHacking" \
     "  --priority LEVEL    Filter by priority (repeatable)      shorthand: pri:LEVEL" \
     "  --tag NAME          Require a tag (repeatable)           shorthand: +NAME" \
     "  --parent ID         Only subtasks of ID                  shorthand: ^ID" \
@@ -305,6 +307,12 @@ td_cmd_list() {
     td_usage_err list "due: is not a list filter; use --overdue"
     return
   fi
+  for s in "${projects[@]}"; do
+    td_valid_project "$s" || {
+      td_usage_err list "invalid project: '$s'"
+      return
+    }
+  done
   for s in "${priorities[@]}"; do
     td_valid_priority "$s" || {
       td_usage_err list "invalid priority: '$s'"
@@ -321,12 +329,12 @@ td_cmd_list() {
     --argjson overdue "$overdue" \
     --arg parent "${TD_P[parent]:-}" \
     --arg statuses "${statuses[*]}" --arg priorities "${priorities[*]}" \
-    --arg projects "${projects[*]}" --arg tags "${TD_P_TAGS[*]}" '
+    --arg tags "${TD_P_TAGS[*]}" '
     def words: split(" ") | map(select(. != ""));
     {visibility: $vis, archive_days: $days, overdue: $overdue,
      parent: (if $parent == "" then null else ($parent | tonumber) end),
      statuses: ($statuses | words), priorities: ($priorities | words),
-     projects: ($projects | words), tags: ($tags | words)}') || return
+     projects: $ARGS.positional, tags: ($tags | words)}' --args "${projects[@]}") || return
 
   td_storage_init || return
   tasks=$(td_tasks_select "$filter") || return
@@ -1578,4 +1586,104 @@ td_cmd_theme() {
       ;;
     *) td_usage_err theme "unknown subcommand: $sub" ;;
   esac
+}
+
+# --- projects --------------------------------------------------------------
+
+td_register_cmd project Tasks "Create, list or remove projects and subprojects"
+td_register_cmd projects Tasks "List projects as a tree (same as: project list)"
+td_help_project() {
+  printf '%s\n' \
+    "Usage: todosh project [list | add PATH | remove PATH]" \
+    "" \
+    "Projects nest like paths: 'HardwareHacking/RF & SDR' is a subproject of" \
+    "'HardwareHacking' (up to 4 levels). A project exists while it has tasks;" \
+    "'add' creates it in advance so it shows up empty. Filters include" \
+    "subprojects: todosh list p:HardwareHacking" \
+    "" \
+    "  list          Tree with open/done counts (default)" \
+    "  add PATH      Create a project (and its parents)" \
+    "  remove PATH   Remove an empty project and its subprojects" \
+    "" \
+    "Examples:" \
+    "  todosh project add 'HardwareHacking/RF & SDR'" \
+    "  todosh add Learn the fundamentals 'p:HardwareHacking/RF & SDR'"
+}
+td_help_projects() { td_help_project; }
+
+td_cmd_projects() {
+  if td_wants_help "$@"; then
+    td_help_project
+    return 0
+  fi
+  td_cmd_project list "$@"
+}
+
+td_cmd_project() {
+  if td_wants_help "$@"; then
+    td_help_project
+    return 0
+  fi
+  local sub=${1:-list}
+  (($#)) && shift
+  td_storage_init || return
+  case $sub in
+    list)
+      if (($#)); then
+        td_usage_err project "unexpected argument: $1"
+        return
+      fi
+      local tree
+      tree=$(td_projects_tree) || return
+      if ((TD_OPT_JSON)); then
+        jq . <<<"$tree"
+        return
+      fi
+      _td_render_projects "$tree"
+      ;;
+    add | remove)
+      if (($# != 1)); then
+        td_usage_err project "usage: todosh project $sub PATH"
+        return
+      fi
+      if [[ $sub == add ]]; then
+        td_project_add "$1" || return
+        if ((TD_OPT_JSON)); then
+          jq -n --arg p "$1" --argjson new "$TD_RESULT" '{project: $p, created: ($new == 1)}'
+        elif ((TD_RESULT)); then
+          printf 'Created project %s\n' "$1"
+        else
+          printf 'Project %s already exists\n' "$1"
+        fi
+      else
+        td_project_remove "$1" || return
+        ((TD_OPT_JSON)) && jq -n --arg p "$1" '{removed: $p}' || printf 'Removed project %s\n' "$1"
+      fi
+      ;;
+    *) td_usage_err project "unknown subcommand: $sub" ;;
+  esac
+}
+
+# _td_render_projects TREE_JSON — the project tree with counts.
+_td_render_projects() {
+  local path name depth open done_n total prefix w=0
+  local -a rows=()
+  while IFS=$'\x1f' read -r path name depth open done_n total; do
+    rows+=("$path"$'\x1f'"$name"$'\x1f'"$depth"$'\x1f'"$open"$'\x1f'"$done_n"$'\x1f'"$total")
+    ((${#name} + 2 * depth > w)) && w=$((${#name} + 2 * depth))
+  done < <(jq -r '.[] | [.path, .name, .depth, .open, .done, .total] | map(tostring) | join("\u001f")' <<<"$1")
+  if ((${#rows[@]} == 0)); then
+    [[ -t 1 ]] && printf 'No projects yet. Create one with: todosh project add NAME\n'
+    return 0
+  fi
+  local row pad
+  for row in "${rows[@]}"; do
+    IFS=$'\x1f' read -r path name depth open done_n total <<<"$row"
+    prefix=""
+    ((depth > 0)) && printf -v prefix '%*s%s ' $((2 * depth - 2)) '' "${TD_SYM[child]}"
+    pad=$((w + 2 - ${#prefix} - ${#name}))
+    printf '%s%s%s%s%*s%s%s open%s  %s/%s done%s\n' "${TD_SGR[gray]}" "$prefix" "${TD_SGR[reset]}" \
+      "${TD_SGR[magenta]}$name${TD_SGR[reset]}" "$pad" "" "${TD_SGR[bold]}" "$open" \
+      "${TD_SGR[reset]}${TD_SGR[gray]}" "$done_n" "$total" "${TD_SGR[reset]}"
+  done
 }

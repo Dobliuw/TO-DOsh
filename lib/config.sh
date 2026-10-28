@@ -16,18 +16,25 @@ declare -grA TD_CONF_DEFAULTS=(
   [archive_after_days]=7
   [editor]=""
   [background]=solid
+  [banner]=auto
+  [logo]=""
+  [tagline]="To-do tracking from & for the terminal."
 )
 
 # td_config_valid KEY VALUE — succeed if VALUE is acceptable for KEY.
 td_config_valid() {
   local key=$1 value=$2
   case $key in
-    theme | default_project) td_valid_name "$value" ;;
+    theme) td_valid_name "$value" ;;
+    default_project) td_valid_project "$value" ;;
     color) td_in_list "$value" auto always never ;;
     icons) td_in_list "$value" auto nerd unicode ascii ;;
     archive_after_days) [[ $value =~ ^(0|[1-9][0-9]{0,3})$ ]] ;;
     editor) [[ $value != *[[:cntrl:]]* ]] ;;
     background) td_in_list "$value" solid terminal ;;
+    banner) td_in_list "$value" auto big small none || [[ $value == /* || $value == \~/* ]] ;;
+    logo) [[ -z $value || $value == /* || $value == \~/* ]] && [[ $value != *[[:cntrl:]]* ]] ;;
+    tagline) [[ $value != *[[:cntrl:]]* ]] && ((${#value} <= 120)) ;;
     *) return 1 ;;
   esac
 }

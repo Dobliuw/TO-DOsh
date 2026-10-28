@@ -134,11 +134,21 @@ td_confirm() {
   [[ $answer == [yY] || $answer == [yY][eE][sS] ]]
 }
 
-# td_editor_cmd ARRAY — resolve the editor command into ARRAY.
-# The value is split on whitespace (never eval'ed): `nvim -p` works, quoting does not.
+# td_editor_cmd ARRAY — resolve the editor command into ARRAY: the config
+# 'editor', then $VISUAL, then $EDITOR, then the first installed of nvim, vim,
+# nano, vi. The value is split on whitespace (never eval'ed): `nvim -p` works,
+# quoting does not.
 td_editor_cmd() {
   local -n _td_cmd=$1
-  local _td_editor=${TD_CONF[editor]:-${VISUAL:-${EDITOR:-vi}}}
+  local _td_editor=${TD_CONF[editor]:-${VISUAL:-${EDITOR:-}}} _td_e
+  if [[ -z $_td_editor ]]; then
+    for _td_e in nvim vim nano vi; do
+      if command -v "$_td_e" >/dev/null 2>&1; then
+        _td_editor=$_td_e
+        break
+      fi
+    done
+  fi
   read -ra _td_cmd <<<"$_td_editor"
   ((${#_td_cmd[@]})) || _td_cmd=(vi)
 }
@@ -152,7 +162,7 @@ td_run_editor() {
     return "$TD_E_USAGE"
   fi
   if ! command -v -- "${cmd[0]}" >/dev/null 2>&1; then
-    td_err "editor not found: ${cmd[0]} (set 'editor' in the config, or \$VISUAL/\$EDITOR)"
+    td_err "editor not found: ${cmd[0]} — choose one with: todosh config set editor nvim"
     return "$TD_E_ERR"
   fi
   if ! "${cmd[@]}" "$1" </dev/tty >/dev/tty; then

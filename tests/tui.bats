@@ -391,3 +391,75 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   [ "${TUI_KEYMAP[ctrl-d]}" = page_down ]
   [ "${TUI_KEYMAP[ctrl-z]}" = suspend ]
 }
+
+@test "projects show as a tree: subprojects indented, empty ones in the active view" {
+  todosh project add "infra/Network" >/dev/null
+  todosh project add "Empty one" >/dev/null
+  todosh add Rules "p:infra/Network" >/dev/null
+  _tui_reload
+  run frame 30 130
+  [[ $output == *"▾ Empty one"* ]]
+  [[ $output == *"  ▾ Network"*"0/1"* ]]
+  [[ $output == *"▾ infra"*"1/4"* ]]
+  # A filter shows only projects with matching tasks.
+  TUI_FILTER=Rules
+  _tui_reload
+  run frame 30 130
+  [[ $output != *"Empty one"* && $output == *"Network"* && $output == *"infra"* ]]
+}
+
+@test "collapsing a project hides its subprojects too" {
+  todosh add Rules "p:infra/Network" >/dev/null
+  TUI_COLLAPSED["infra"]=1
+  _tui_reload
+  run frame 30 130
+  [[ $output == *"▸ infra"* && $output != *"Network"* && $output != *"Rules"* ]]
+}
+
+@test "P creates a subproject of the selected project" {
+  _tui_select_group infra
+  keys w:"Network" enter
+  _tui_action new_project
+  [ "$(td_projects_registered | tail -n 1)" = "infra/Network" ]
+  [ "${U_GROUP[TUI_SEL]}" = "infra/Network" ]
+}
+
+@test "banner: title art and tagline at the bottom of the details when there is room" {
+  TD_CONF["tagline"]="My tagline"
+  _tui_select_group docs
+  TUI_BANNER_KEY=""
+  run frame 40 205
+  local art='$$$$$$$$\  $$$$$$'
+  [[ $output == *"$art"* ]]
+  [[ ${lines[37]} == *"My tagline │"* || ${lines[37]} == *"My tagline"* ]]
+  # Narrow: the compact art; no room: nothing.
+  run frame 40 120
+  [[ $output == *"┌┬┐┌─┐"* ]]
+  run frame 14 120
+  [[ $output != *"┌┬┐┌─┐"* && $output != *"My tagline"* ]]
+  TD_CONF["banner"]=none TD_CONF["tagline"]=""
+  run frame 40 205
+  [[ $output != *'$$$$$$$$'* ]]
+}
+
+@test "banner: a text logo, and an image logo through chafa" {
+  printf 'LOGO1\nLOGO2\n' >"$BATS_TEST_TMPDIR/logo.txt"
+  TD_CONF["logo"]=$BATS_TEST_TMPDIR/logo.txt
+  _tui_select_group docs
+  run frame 40 205
+  [[ $output == *"LOGO1   "*'$$$$$$$$'* ]]
+  # A fake chafa: prints colored blocks plus a cursor sequence to be dropped.
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  printf '#!/bin/sh\nprintf "\\033[?25l\\033[38;2;1;2;3m####\\033[0m\\n\\033[38;2;1;2;3m####\\033[0m\\033[?25h\\n"\n' \
+    >"$BATS_TEST_TMPDIR/bin/chafa"
+  chmod +x "$BATS_TEST_TMPDIR/bin/chafa"
+  touch "$BATS_TEST_TMPDIR/logo.png"
+  TD_CONF["logo"]=$BATS_TEST_TMPDIR/logo.png
+  PATH="$BATS_TEST_TMPDIR/bin:$PATH"
+  run frame 40 205
+  [[ $output == *"####   "*'$$$$$$$$'* ]]
+  [[ $(_tui_frame) != *$'\e[?25l'* ]]
+  # The width is still exact.
+  local line
+  for line in "${lines[@]}"; do [ "${#line}" -eq 205 ]; done
+}

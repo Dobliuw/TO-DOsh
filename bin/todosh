@@ -25,7 +25,7 @@ else
 fi
 unset td_self td_root
 
-for td_module in core config storage dates term theme tasks focus cli commands tui_ui tui; do
+for td_module in core config storage dates term theme tasks projects focus cli commands tui_ui tui; do
   # shellcheck source=/dev/null
   source "$TD_LIB_DIR/$td_module.sh" || {
     printf 'todosh: cannot load %s\n' "$TD_LIB_DIR/$td_module.sh" >&2

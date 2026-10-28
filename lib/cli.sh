@@ -150,10 +150,12 @@ td_cmd_version() {
 td_register_cmd config General "Show configuration and file locations"
 td_help_config() {
   printf '%s\n' \
-    "Usage: todosh config [show|path]" \
+    "Usage: todosh config [show | path | get KEY | set KEY VALUE]" \
     "" \
-    "  show   Print effective settings and directories (default)" \
-    "  path   Print the config file path" \
+    "  show            Print effective settings and directories (default)" \
+    "  path            Print the config file path" \
+    "  get KEY         Print one setting" \
+    "  set KEY VALUE   Change a setting (kept in the config file with your comments)" \
     "" \
     "The config file holds 'key = value' lines; '#' starts a comment line." \
     "" \
@@ -168,6 +170,11 @@ td_help_config() {
     "  background          solid | terminal: paint the theme background in the" \
     "                      interface, or keep the terminal's (and its" \
     "                      transparency) (default: solid)" \
+    "  banner              Title art in the interface: auto, big, small, none, or" \
+    "                      the path of a text file with your own art" \
+    "  logo                Path of a logo next to the title: a text file, or an" \
+    "                      image (png, jpg, gif, webp; needs chafa)" \
+    "  tagline             One line under the title" \
     "  editor              Command to edit descriptions (default: \$VISUAL," \
     "                      then \$EDITOR, then vi)" \
     "" \
@@ -183,6 +190,25 @@ td_cmd_config() {
   fi
   local sub=${1:-show}
   (($#)) && shift
+  case $sub in
+    get)
+      if (($# != 1)) || [[ ! -v TD_CONF_DEFAULTS[$1] ]]; then
+        td_usage_err config "usage: todosh config get KEY (keys: $(td_config_keys | xargs))"
+        return
+      fi
+      printf '%s\n' "${TD_CONF[$1]}"
+      return
+      ;;
+    set)
+      if (($# != 2)); then
+        td_usage_err config "usage: todosh config set KEY VALUE"
+        return
+      fi
+      td_config_set "$1" "$2" || return
+      printf '%s = %s\n' "$1" "$2"
+      return
+      ;;
+  esac
   if (($#)); then
     td_usage_err config "unexpected argument: $1"
     return

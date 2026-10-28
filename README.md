@@ -27,6 +27,29 @@ view of the CLI: no syntax to remember.
   With `icons = nerd` (settings) it uses Nerd Font glyphs. Over SSH or in a basic
   terminal it falls back to 256/16 colors and ASCII.
 
+### Projects and subprojects
+
+Projects nest like paths, up to 4 levels:
+
+```sh
+tdsh project add 'HardwareHacking/RF & SDR'
+tdsh add Learn the fundamentals 'p:HardwareHacking/RF & SDR'
+tdsh add ChipWhisperer --project 'HardwareHacking/Fault Injection'
+tdsh projects              # the tree, with counts
+tdsh list p:HardwareHacking   # includes every subproject
+```
+
+In the interface they are a collapsible tree; `P` creates a subproject of the
+selected project.
+
+### Banner and logo
+
+When there is room, the details panel shows a banner at the bottom: title art,
+your logo and a tagline. Settings (`,` in the interface, or `todosh config set`):
+`banner` (auto, big, small, none, or a text file with your art), `logo` (a text
+file, or an image such as `~/logo.png` rendered with the optional
+[chafa](https://hpjansson.org/chafa/)), and `tagline`.
+
 ## Quick tour (CLI)
 
 ```sh
@@ -49,6 +72,10 @@ RPROMPT='$(tdsh prompt --time)'   # ◉ #1 Review firewall rules · 25m
 ```
 
 Run `todosh help` for every command and `todosh <command> --help` for details.
+
+The editor (notes, `edit`, comments) is the `editor` setting, else `$VISUAL`,
+`$EDITOR`, or the first installed of nvim, vim, nano, vi:
+`todosh config set editor nvim`.
 
 ## Planned highlights
 
