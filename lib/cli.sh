@@ -1,22 +1,27 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2034
 # cli.sh — argument parsing, command dispatch and CLI presentation.
 #
 # Commands are functions named td_cmd_<name>, registered with td_register_cmd so
 # that help output and dispatch stay in sync. Each command may define
-# td_help_<name> for `todosh <name> --help`.
+# td_help_<name> for `todosh <name> --help`. Task commands live in commands.sh.
 
 declare -ga TD_CMD_ORDER=()
-declare -gA TD_CMD_SUMMARY=()
+declare -gA TD_CMD_SUMMARY=() TD_CMD_GROUP=()
+# Order of the groups in `todosh help`.
+readonly TD_CMD_GROUPS=(Tasks Status History Trash General)
 
-# Global output options, set by td_main.
+# Global output options, set by td_main. These globals are read by other
+# modules (SC2034 is disabled for this file because of that).
 TD_OPT_JSON=0
-# shellcheck disable=SC2034 # read by the renderer (phase 4)
 TD_OPT_COLOR=auto
+# Name of the command being run, for usage messages.
+TD_CMD=""
 
-# td_register_cmd NAME SUMMARY
+# td_register_cmd NAME GROUP SUMMARY
 td_register_cmd() {
   TD_CMD_ORDER+=("$1")
-  TD_CMD_SUMMARY[$1]=$2
+  TD_CMD_GROUP[$1]=$2
+  TD_CMD_SUMMARY[$1]=$3
 }
 
 # td_usage_err CMD MESSAGE — report invalid usage of CMD.
@@ -47,15 +52,15 @@ td_main() {
     esac
   done
   set -- "${args[@]}"
-  # shellcheck disable=SC2034 # read by the renderer (phase 4)
   [[ -n ${NO_COLOR:-} ]] && TD_OPT_COLOR=never
 
-  if (($# == 0)); then
-    td_cmd_default "$@"
-    return
+  # Bare `todosh` lists tasks; on an interactive terminal it will open the
+  # TUI once that exists (phase 4).
+  local cmd=list
+  if (($#)); then
+    cmd=$1
+    shift
   fi
-  local cmd=$1
-  shift
   case $cmd in
     -h | --help) cmd=help ;;
     -V | --version) cmd=version ;;
@@ -65,10 +70,12 @@ td_main() {
     td_usage_err "" "unknown command: $cmd" || return
   fi
 
+  TD_CMD=$cmd
   if [[ $cmd != help && $cmd != version ]]; then
     td_require_cmds jq || return
     td_paths_init || return
     td_config_load
+    td_term_init
   fi
   "td_cmd_$cmd" "$@"
 }
@@ -78,15 +85,9 @@ td_wants_help() {
   [[ ${1:-} == -h || ${1:-} == --help ]]
 }
 
-# Bare `todosh`: the TUI on an interactive terminal (phase 4), `list`
-# otherwise (phase 2). Until those exist, show the help.
-td_cmd_default() {
-  td_cmd_help "$@"
-}
-
 # --- help ------------------------------------------------------------------
 
-td_register_cmd help "Show help for todosh or for one command"
+td_register_cmd help General "Show help for todosh or for one command"
 td_cmd_help() {
   if (($# > 0)); then
     local name=$1
@@ -102,17 +103,19 @@ td_cmd_help() {
     return 0
   fi
 
-  local name
+  local name group
   printf '%s\n' \
     "todosh — terminal task manager" \
     "" \
     "Usage:" \
-    "  todosh                 Open the interface (TUI)" \
-    "  todosh <command> [args] [--json] [--no-color]" \
-    "" \
-    "Commands:"
-  for name in "${TD_CMD_ORDER[@]}"; do
-    printf '  %-12s %s\n' "$name" "${TD_CMD_SUMMARY[$name]}"
+    "  todosh                    List tasks (the TUI will open here)" \
+    "  todosh <command> [args] [--json] [--no-color]"
+  for group in "${TD_CMD_GROUPS[@]}"; do
+    printf '\n%s:\n' "$group"
+    for name in "${TD_CMD_ORDER[@]}"; do
+      [[ ${TD_CMD_GROUP[$name]} == "$group" ]] || continue
+      printf '  %-12s %s\n' "$name" "${TD_CMD_SUMMARY[$name]}"
+    done
   done
   printf '%s\n' \
     "" \
@@ -131,7 +134,7 @@ td_cmd_help() {
 
 # --- version ---------------------------------------------------------------
 
-td_register_cmd version "Print the todosh version"
+td_register_cmd version General "Print the todosh version"
 td_cmd_version() {
   if ((TD_OPT_JSON)); then
     td_require_cmds jq || return
@@ -143,7 +146,7 @@ td_cmd_version() {
 
 # --- config ----------------------------------------------------------------
 
-td_register_cmd config "Show configuration and file locations"
+td_register_cmd config General "Show configuration and file locations"
 td_help_config() {
   printf '%s\n' \
     "Usage: todosh config [show|path]" \

@@ -1,3 +1,5 @@
 # bats runs every @test in its own process, which ShellCheck models as a
 # subshell; variable changes inside a test are intentionally local to it.
-disable=SC2030,SC2031
+# Tests also set variables that only the sourced library reads (SC2034),
+# e.g. arrays passed by name to td_task_edit.
+disable=SC2030,SC2031,SC2034

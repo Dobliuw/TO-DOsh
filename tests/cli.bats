@@ -22,7 +22,7 @@ setup() {
 @test "help lists the registered commands" {
   run todosh --help
   [ "$status" -eq 0 ]
-  [[ $output == *"Commands:"* ]]
+  [[ $output == *"General:"* ]]
   [[ $output == *"config"* ]]
   [[ $output == *"Exit codes:"* ]]
 }

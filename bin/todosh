@@ -21,7 +21,7 @@ else
 fi
 unset td_self td_root
 
-for td_module in core config storage cli; do
+for td_module in core config storage term tasks cli commands; do
   # shellcheck source=/dev/null
   source "$TD_LIB_DIR/$td_module.sh" || {
     printf 'todosh: cannot load %s\n' "$TD_LIB_DIR/$td_module.sh" >&2
