@@ -2,5 +2,6 @@
 # subshell; variable changes inside a test are intentionally local to it.
 # Tests also set variables that only the sourced library reads (SC2034),
 # e.g. arrays passed by name to td_task_edit. Stubs that replace library
-# functions are called by the library, not by the tests (SC2329).
-disable=SC2030,SC2031,SC2034,SC2329
+# functions are called by the library, not by the tests (SC2329). Globals such
+# as TD_TB come from the sourced library (SC2153).
+disable=SC2030,SC2031,SC2034,SC2329,SC2153

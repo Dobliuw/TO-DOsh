@@ -41,7 +41,7 @@ setup() {
   td_theme_load tokyonight
   TD_TIER=3 td_theme_sgr
   [ "${TD_TC[fg]}" = $'\e[38;2;192;202;245m' ]
-  [ "${TD_TC[sel]}" = $'\e[48;2;40;52;87m' ]
+  [ "${TD_TC[sel]}" = $'\e[48;2;40;52;88m' ]
   TD_TIER=2
   td_theme_sgr
   [[ ${TD_TC[fg]} =~ ^$'\e'\[38\;5\;[0-9]+m$ ]]
@@ -130,4 +130,26 @@ setup() {
   [[ $output == *"Theme set to kitty"* ]]
   run todosh theme import alacritty
   [ "$status" -eq 2 ]
+}
+
+@test "painted backgrounds never equal the theme color exactly (kitty transparency)" {
+  td_theme_load tokyonight
+  TD_TIER=3 td_theme_sgr
+  # #1a1b26 is also kitty's background: painted as #1a1b27 to stay opaque.
+  [ "${TD_TB[bg]}" = $'\e[48;2;26;27;39m' ]
+  # Foregrounds keep the exact theme colors.
+  [ "${TD_TC[bg]}" = $'\e[38;2;26;27;38m' ]
+  [ "$(_td_rgb_opaque '#0000ff')" = "0;0;254" ]
+}
+
+@test "background = terminal keeps the terminal background in the main area" {
+  td_theme_load tokyonight
+  TD_TIER=3 td_theme_sgr
+  TD_CONF["background"]=terminal
+  _tui_colors
+  [[ ${TUI_B[main]} != *"48;2"* ]]
+  [[ ${TUI_B[modal]} == *"48;2"* ]]
+  TD_CONF["background"]=solid
+  _tui_colors
+  [[ ${TUI_B[main]} == *$'\e[48;2;26;27;39m'* ]]
 }

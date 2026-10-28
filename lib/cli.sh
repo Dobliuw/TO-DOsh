@@ -165,6 +165,9 @@ td_help_config() {
     "  archive_after_days  Days after which DONE/CANCELLED tasks leave the main" \
     "                      view; they stay searchable and restorable. 0 = never" \
     "                      (default: 7)" \
+    "  background          solid | terminal: paint the theme background in the" \
+    "                      interface, or keep the terminal's (and its" \
+    "                      transparency) (default: solid)" \
     "  editor              Command to edit descriptions (default: \$VISUAL," \
     "                      then \$EDITOR, then vi)" \
     "" \

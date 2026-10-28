@@ -158,6 +158,18 @@ _td_rgb() {
   printf '%s;%s;%s' $((16#${hex:0:2})) $((16#${hex:2:2})) $((16#${hex:4:2}))
 }
 
+# _td_rgb_opaque HEX — "r;g;b" with blue moved by one step. Some terminals
+# (kitty with background_opacity < 1) draw a cell transparent when its
+# background equals the terminal's own background, even when the application
+# paints it explicitly. Themes usually share that color with the terminal, so
+# painted backgrounds are nudged by an invisible step to always stay solid.
+_td_rgb_opaque() {
+  local hex=${1#\#} b
+  b=$((16#${hex:4:2}))
+  if ((b < 255)); then b=$((b + 1)); else b=$((b - 1)); fi
+  printf '%s;%s;%s' $((16#${hex:0:2})) $((16#${hex:2:2})) "$b"
+}
+
 # td_hex_mix HEX1 HEX2 PERCENT — print HEX1 moved PERCENT% towards HEX2.
 td_hex_mix() {
   local a=${1#\#} b=${2#\#} p=$3 i out="#" x y
@@ -180,6 +192,9 @@ td_theme_sgr() {
         rgb=$(_td_rgb "${TD_THEME[$key]}")
         TD_TC[$key]=$'\e[38;2;'"${rgb}m"
         TD_TB[$key]=$'\e[48;2;'"${rgb}m"
+        if [[ " ${TD_THEME_BG_KEYS[*]} " == *" $key "* ]]; then
+          TD_TB[$key]=$'\e[48;2;'"$(_td_rgb_opaque "${TD_THEME[$key]}")m"
+        fi
         ;;
       2)
         rgb=$(td_hex_to_256 "${TD_THEME[$key]}")

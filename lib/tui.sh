@@ -1263,6 +1263,7 @@ _tui_settings() {
   _tui_form_add theme pick "Theme" "${TD_CONF[theme]}" _tui_settings_pick_theme
   _tui_form_add icons segment "Icons" "${TD_CONF[icons]}" "auto unicode nerd ascii"
   _tui_form_add color segment "Colors" "${TD_CONF[color]}" "auto always never"
+  _tui_form_add background segment "Background" "${TD_CONF[background]}" "solid terminal"
   _tui_form_add archive_after_days text "Archive" "${TD_CONF[archive_after_days]}" "" \
     "days before done tasks leave Active (0 = never)"
   _tui_form_add default_project text "Project" "${TD_CONF[default_project]}" "" "default project for new tasks"
@@ -1300,13 +1301,13 @@ _tui_preview_theme() {
 
 _tui_settings_save() {
   local key
-  for key in theme icons color archive_after_days default_project editor; do
+  for key in theme icons color background archive_after_days default_project editor; do
     if ! td_config_valid "$key" "${F_VAL[$key]}"; then
       F_ERR="Invalid value for ${F_LABEL[$key],,}: '${F_VAL[$key]}'" F_ERR_FIELD=$key
       return 1
     fi
   done
-  for key in theme icons color archive_after_days default_project editor; do
+  for key in theme icons color background archive_after_days default_project editor; do
     [[ ${F_VAL[$key]} == "${F_ORIG[$key]}" && $key != theme ]] && continue
     if ! td_config_set "$key" "${F_VAL[$key]}"; then
       F_ERR=$TD_LAST_ERROR F_ERR_FIELD=$key

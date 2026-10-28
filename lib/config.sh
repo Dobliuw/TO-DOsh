@@ -15,6 +15,7 @@ declare -grA TD_CONF_DEFAULTS=(
   [default_project]=inbox
   [archive_after_days]=7
   [editor]=""
+  [background]=solid
 )
 
 # td_config_valid KEY VALUE — succeed if VALUE is acceptable for KEY.
@@ -26,6 +27,7 @@ td_config_valid() {
     icons) td_in_list "$value" auto nerd unicode ascii ;;
     archive_after_days) [[ $value =~ ^(0|[1-9][0-9]{0,3})$ ]] ;;
     editor) [[ $value != *[[:cntrl:]]* ]] ;;
+    background) td_in_list "$value" solid terminal ;;
     *) return 1 ;;
   esac
 }

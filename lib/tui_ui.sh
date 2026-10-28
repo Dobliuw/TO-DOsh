@@ -29,6 +29,12 @@ _tui_colors() {
     [field]=$r${TD_TB[bg]}${TD_TC[fg]}
     [sel]=$r${TD_TB[selection]}${TD_TC[fg]}
   )
+  # background = terminal: keep the terminal's own background (and its
+  # transparency) in the main area; bars and dialogs stay solid.
+  if [[ ${TD_CONF[background]:-solid} == terminal ]]; then
+    TUI_B[main]=$r${TD_TC[fg]}
+    TUI_B[field]=$r${TD_TB[surface]}${TD_TC[fg]}
+  fi
   TD_TC["strike"]=""
   if ((TD_TIER >= 2)); then
     TD_TC["strike"]=$'\e[9m'
