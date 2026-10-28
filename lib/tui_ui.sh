@@ -212,7 +212,7 @@ _tui_center() {
   _td_top=$(((TUI_ROWS - $4) / 2 + 1))
   _td_left=$(((TUI_COLS - $3) / 2 + 1))
   ((_td_top < 1)) && _td_top=1
-  ((_td_left < 1)) && _td_left=1
+  if ((_td_left < 1)); then _td_left=1; fi
 }
 
 # --- keyboard ----------------------------------------------------------------

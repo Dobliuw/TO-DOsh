@@ -450,7 +450,12 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   [[ $output == *"LOGO1   "*'$$$$$$$$'* ]]
   # A fake chafa: prints colored blocks plus a cursor sequence to be dropped.
   mkdir -p "$BATS_TEST_TMPDIR/bin"
-  printf '#!/bin/sh\nprintf "\\033[?25l\\033[38;2;1;2;3m####\\033[0m\\n\\033[38;2;1;2;3m####\\033[0m\\033[?25h\\n"\n' \
+  # It only answers when called with --probe=off and no terminal on stdin:
+  # a probing chafa would wait for answers that the TUI reads as keys.
+  printf '%s\n' '#!/bin/sh' \
+    'case "$*" in *--probe=off*) ;; *) exit 1 ;; esac' \
+    '[ -t 0 ] && exit 1' \
+    'printf "\033[?25l\033[38;2;1;2;3m####\033[0m\n\033[38;2;1;2;3m####\033[0m\033[?25h\n"' \
     >"$BATS_TEST_TMPDIR/bin/chafa"
   chmod +x "$BATS_TEST_TMPDIR/bin/chafa"
   touch "$BATS_TEST_TMPDIR/logo.png"
@@ -462,4 +467,22 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   # The width is still exact.
   local line
   for line in "${lines[@]}"; do [ "${#line}" -eq 205 ]; done
+}
+
+@test "details and banner are built in the main shell, so their caches persist" {
+  TUI_ROWS=40 TUI_COLS=205
+  _tui_base_build
+  [ -n "$TUI_DETAIL_KEY" ]
+  [ -n "$TUI_BANNER_KEY" ]
+}
+
+@test "with no tasks the details panel welcomes and shows the banner" {
+  export TODOSH_DATA_DIR="$BATS_TEST_TMPDIR/empty"
+  td_paths_init
+  td_storage_init
+  _tui_reload
+  run frame 40 205
+  [[ $output == *"Welcome to todosh"* ]]
+  [[ $output == *"Tasks are read from $BATS_TEST_TMPDIR/empty"* ]]
+  [[ $output == *"To-do tracking from & for the terminal."* ]]
 }

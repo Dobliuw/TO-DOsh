@@ -70,6 +70,7 @@ td_tui_main() {
   _tui_enter
   _tui_size
   _tui_reload
+  _tui_logo_check
 
   local last=0 now action
   while :; do
@@ -254,6 +255,12 @@ _tui_collapsed() {
 # _tui_base_build — render the main screen into TUI_BASE (positioned lines).
 _tui_base_build() {
   local frame row=1 line
+  # The frame is rendered in a subshell; build the cached parts here first so
+  # the caches survive it (details per selection, the banner per size).
+  _tui_layout
+  if ((TUI_RW > 0 && TUI_COLS >= 50 && TUI_ROWS >= 12)); then
+    _tui_detail_build "$TUI_RW" $((TUI_ROWS - 4))
+  fi
   frame=$(_tui_frame)
   TUI_BASE=""
   while IFS= read -r line; do
@@ -272,7 +279,7 @@ _tui_layout() {
     TUI_LW=$TUI_COLS
   fi
   TUI_RW=$((TUI_COLS - TUI_LW - 1))
-  ((TUI_RW < 0)) && TUI_RW=0
+  if ((TUI_RW < 0)); then TUI_RW=0; fi
 }
 
 # _tui_frame — print the main screen, one line per row. Pure (no terminal
@@ -562,7 +569,11 @@ _tui_detail_build() {
   TUI_DETAIL_KEY=$key
   TUI_DETAIL=()
   TUI_DW=$width
-  ((${#U_KIND[@]})) || return 0
+  if ((${#U_KIND[@]} == 0)); then
+    _tui_detail_welcome
+    _tui_banner_place "$height"
+    return 0
+  fi
   _tui_dl_blank
   if [[ ${U_KIND[TUI_SEL]:-} == G ]]; then
     _tui_detail_group "${U_GROUP[TUI_SEL]:-}"
@@ -597,6 +608,19 @@ _tui_expand_path() {
   else
     printf '%s\n' "$1"
   fi
+}
+
+# _tui_logo_check — tell, once, why a configured logo cannot be shown.
+_tui_logo_check() {
+  local file
+  [[ -n ${TD_CONF[logo]:-} ]] || return 0
+  file=$(_tui_expand_path "${TD_CONF[logo]}")
+  if [[ ! -r $file ]]; then
+    _tui_toast error "Logo not found: ${TD_CONF[logo]}"
+  elif [[ ${file,,} == *.@(png|jpg|jpeg|gif|webp|bmp) ]] && ! command -v chafa >/dev/null 2>&1; then
+    _tui_toast info "Image logos need chafa (e.g. sudo pacman -S chafa)"
+  fi
+  return 0
 }
 
 # _tui_banner_art WIDTH — print the title art lines that fit WIDTH.
@@ -645,8 +669,13 @@ _tui_logo_lines() {
       key=${key%% *}
       if [[ ! -f $cache/logo-$key.ans ]]; then
         mkdir -p -- "$cache" 2>/dev/null || return 0
-        chafa --format=symbols --colors="$colors" --size=$((rows * 2))x"$rows" \
-          --bg="${TD_THEME[bg]}" --animate=off -- "$file" >"$cache/logo-$key.ans" 2>/dev/null || {
+        # --probe=off and no stdin: by default chafa queries the terminal and
+        # waits for the answers, which would arrive in the TUI as key presses.
+        local -a guard=()
+        command -v timeout >/dev/null 2>&1 && guard=(timeout 15)
+        "${guard[@]}" chafa --probe=off --polite=on --format=symbols --colors="$colors" \
+          --size=$((rows * 2))x"$rows" --bg="${TD_THEME[bg]}" --animate=off -- "$file" \
+          >"$cache/logo-$key.ans" 2>/dev/null </dev/null || {
           rm -f -- "$cache/logo-$key.ans"
           return 0
         }
@@ -729,6 +758,27 @@ _tui_banner_build() {
     _tl_end
     TUI_BANNER+=("$TL")
   fi
+}
+
+# _tui_detail_welcome — the details panel when there is nothing to select.
+# It names the data directory: an empty list is often just a different one.
+_tui_detail_welcome() {
+  local dir=$TD_DATA_DIR
+  [[ $dir == "$HOME"/* ]] && dir="~${dir#"$HOME"}"
+  _tui_dl_blank
+  _tui_dl_text "${TD_TC[fg]}${TD_TC[bold]}" "Welcome to todosh"
+  _tui_dl_text "${TD_TC[muted]}" "Tasks are read from $dir"
+  ((TUI_N_OPEN)) || [[ -n $(td_task_ids) ]] \
+    || _tui_dl_text "${TD_TC[muted]}" "(empty; TODOSH_DATA_DIR picks another directory)"
+  _tui_dl_blank
+  local pair
+  for pair in "n|create a task" "P|create a project or subproject" ",|settings, theme, logo" \
+    "?|every shortcut"; do
+    _tui_dl_start
+    _tl_add "${TD_TC[accent]}${TD_TC[bold]}" "${pair%%|*}  "
+    _tl_add "${TD_TC[fg]}" "${pair#*|}"
+    _tui_dl_end
+  done
 }
 
 _tui_detail_group() {
@@ -932,7 +982,7 @@ _tui_move() {
   local n=${#U_KIND[@]}
   TUI_SEL=$((TUI_SEL + $1))
   ((TUI_SEL >= n)) && TUI_SEL=$((n - 1))
-  ((TUI_SEL < 0)) && TUI_SEL=0
+  if ((TUI_SEL < 0)); then TUI_SEL=0; fi
 }
 
 # _tui_done RC MESSAGE — toast the outcome of a business call and reload.
