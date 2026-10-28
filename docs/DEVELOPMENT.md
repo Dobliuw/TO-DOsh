@@ -12,6 +12,11 @@
 | `lib/tasks.sh` | Business rules: create, edit, status, comments, trash, queries |
 | `lib/cli.sh` | Global flags, command registry and dispatch, help/version/config |
 | `lib/commands.sh` | Task commands: argument parsing and text/JSON presentation |
+| `lib/dates.sh` | Due-date parsing, durations, jq helpers for relative dates |
+| `lib/focus.sh` | The focused task and its work sessions |
+| `lib/theme.sh` | Themes, terminal color tiers, kitty import |
+| `lib/tui.sh` | The full-screen interface |
+| `themes/` | Built-in themes (`key = #rrggbb`) |
 | `tests/` | bats test suites; `test_helper.bash` isolates each test |
 
 The CLI and the TUI must only call business functions (`tasks.sh`, later
@@ -61,4 +66,9 @@ make check    # lint + format check + tests
 Tooling on Arch: `sudo pacman -S bash-bats shellcheck shfmt`.
 
 Each test runs with a private `HOME` whose path contains a space; nothing touches
-your real data. In bats, `! cmd` does not fail a test, so use `refute cmd`.
+your real data. `tests/tui.bats` renders frames without a terminal (`_tui_frame`
+is pure) and drives the real interface through `script(1)` for a smoke test.
+
+TUI performance rule: nothing that runs per key press may fork. Use lookup
+tables, `printf -v` and the `-v` form of helpers (`td_fmt_duration -v`); jq runs
+only on reload and when the selected task changes. In bats, `! cmd` does not fail a test, so use `refute cmd`.

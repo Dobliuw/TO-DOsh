@@ -2,11 +2,38 @@
 
 A fast, good-looking task manager for your terminal, written in pure Bash.
 
-> **Status: early development (phase 3 of 6).** The CLI manages tasks,
-> subtasks, comments, due dates, focus sessions and the trash. The TUI is next.
+> **Status: early development (phase 4 of 6).** Full-screen interface and
+> CLI both work: tasks, subtasks, comments, due dates, focus sessions, trash and
+> themes. Next: search, stats, backups and shell completion.
 > See [docs/PRD.md](docs/PRD.md) for the full plan.
 
-## Quick tour
+## The interface
+
+Run `todosh` (or `tdsh`) in a terminal:
+
+```
+╭─ TODOSH ──────────────────────────────── ◉ #1 Review firewall rules · 25m ─╮
+│ View: active   Filter: —                                     ⚠ 1 overdue   │
+├────────────────────────────────────────┬───────────────────────────────────┤
+│  ▾ infra                          1/3  │ #1 Review firewall rules          │
+│❯ ◐ H #1 ◉ Review firewall rules 1/2 fri│ IN_PROGRESS · high · infra        │
+│    ✓ M #2 Export current rules         │ Due 2026-10-30 (fri)              │
+│    ○ M #3 Audit rules          1d late │ ◉ in focus for 25m                │
+├────────────────────────────────────────┴───────────────────────────────────┤
+│ n new  e edit  c comment  f focus  s start  d done  / filter  ? help       │
+╰────────────────────────────────────────────────────────────────────────────╯
+```
+
+`j`/`k` or arrows move, `n` adds (shorthand works: `p:infra pri:high due:fri`),
+`f` focuses, `s`/`b`/`d`/`x`/`r` change the status, `c` comments, `e` opens your
+editor, `:` runs any todosh command, `?` shows every key.
+
+Themes: `todosh theme list`, `todosh theme set nord`, or use your terminal's
+colors with `todosh theme import kitty`. The interface never paints the
+background, so transparency is kept. Over SSH or in a basic terminal it falls
+back to 256 or 16 colors and ASCII borders.
+
+## Quick tour (CLI)
 
 ```sh
 tdsh add Review firewall rules p:infra pri:high +network due:fri   # Created #1

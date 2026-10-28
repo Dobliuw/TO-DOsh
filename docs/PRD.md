@@ -139,3 +139,10 @@ translations.
   due date means the next such day, today included; due dates sort within the
   same status and priority; overdue/due-today warnings appear under `list` on a
   terminal.
+- 2026-10-28 — Phase 4 (TUI): the interface never paints the background (keeps
+  terminal transparency); typed input (`n`, `N`, `m`, `:`) goes through the CLI
+  parser itself; `:` runs any todosh command on the normal screen; Enter and `?`
+  use `less`; `D` deletes with confirmation and `u` undoes the last delete;
+  closing a task with open subtasks asks before closing them too; views cycle
+  active/all/overdue/blocked; projects are collapsible groups. Built-in themes:
+  tokyonight, catppuccin (mocha), gruvbox (dark), nord; `theme import kitty`.
