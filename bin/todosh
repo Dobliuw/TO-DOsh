@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# todosh — terminal task manager. Entry point: locate and load lib/, then dispatch.
+
+if ((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] < 404)); then
+  printf 'todosh: requires bash >= 4.4 (running %s)\n' "$BASH_VERSION" >&2
+  exit 1
+fi
+
+# errexit is deliberately off: functions return explicit status codes instead
+# (see docs/DEVELOPMENT.md).
+set -o nounset -o pipefail
+shopt -s extglob
+
+td_self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+td_root=${td_self%/*/*}
+# Installed layout: PREFIX/bin/todosh + PREFIX/lib/todosh/; repo layout: bin/ + lib/.
+if [[ -f $td_root/lib/todosh/core.sh ]]; then
+  TD_LIB_DIR=$td_root/lib/todosh
+else
+  TD_LIB_DIR=$td_root/lib
+fi
+unset td_self td_root
+
+for td_module in core config storage cli; do
+  # shellcheck source=/dev/null
+  source "$TD_LIB_DIR/$td_module.sh" || {
+    printf 'todosh: cannot load %s\n' "$TD_LIB_DIR/$td_module.sh" >&2
+    exit 1
+  }
+done
+unset td_module
+
+td_main "$@"
+exit
