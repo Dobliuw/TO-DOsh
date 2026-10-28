@@ -34,7 +34,9 @@ result in `TD_RESULT`; queries print JSON.
 - Validate IDs and names before building paths.
 - Names: public functions `td_*`, private helpers `_td_*`, globals `TD_*`.
 - Functions that return a value without printing take an output variable name
-  (`td_now_utc now`) and assign through a nameref.
+  (`td_now_utc now`) and assign through a nameref. **Their locals must be
+  prefixed `_td_`**: a local with the same name as the caller's variable would
+  capture the nameref and the result would silently go nowhere.
 - Format: `shfmt -i 2 -ci -bn`.
 
 ## Adding a command

@@ -73,7 +73,8 @@ a corrupted file is reported by name rather than silently skipped.
     {"type": "event", "at": "...", "event": "status", "from": "TODO", "to": "IN_PROGRESS"},
     {"type": "event", "at": "...", "event": "edit", "field": "priority", "from": "med", "to": "high"},
     {"type": "event", "at": "...", "event": "edit", "field": "description"},
-    {"type": "comment", "at": "...", "text": "Found an unexpected rule on 8080"}
+    {"type": "comment", "at": "...", "text": "Found an unexpected rule on 8080"},
+    {"type": "focus", "at": "...", "since": "...", "seconds": 5400}
   ]
 }
 ```
@@ -84,13 +85,22 @@ a corrupted file is reported by name rather than silently skipped.
 | `priority` | `urgent`, `high`, `med`, `low` |
 | `project`, `tags[]` | `[A-Za-z0-9][A-Za-z0-9._-]{0,31}`; tags are kept sorted and unique |
 | `parent` | ID of the parent task, or `null`. Subtasks are one level deep |
-| `due` | Reserved (phase 3); always `null` for now |
+| `due` | Local calendar date `YYYY-MM-DD`, or `null` |
 | `closed` | When the task became `DONE`/`CANCELLED`; `null` while open |
 | timestamps | UTC, ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`) |
 
-History entries are append-only. `type` is `comment` (written by the user) or
-`event` (recorded automatically): `created`, `status` (`from`/`to`), `edit`
-(`field`, plus `from`/`to` except for `description`), `deleted`, `restored`.
+History entries are append-only and `at` is always when the entry was recorded.
+`type` is `comment` (written by the user), `focus` (a finished work session:
+`since` = start, `seconds` = length) or `event` (recorded automatically):
+`created`, `status` (`from`/`to`), `edit` (`field`, plus `from`/`to` except for
+`description`), `deleted`, `restored`.
+
+## Focus (`focus.json`)
+
+`{"task": 42, "since": "2026-10-28T10:00:00Z"}` while a task is in focus,
+`{"task": null, "since": null}` otherwise. The running session is written to
+the task history when the focus moves, is released, or the task is closed or
+deleted.
 
 Rules enforced by todosh (hand edits should respect them too):
 

@@ -133,3 +133,9 @@ translations.
   expansion in zsh/Bash); `parent:ID` added as an alternative to `^ID`; subtasks
   inherit the parent's project; closing a parent with open subtasks requires
   `--force` (which closes them too); reopening a subtask reopens its parent.
+- 2026-10-28 — Phase 3: focusing a BLOCKED task keeps it BLOCKED (only TODO
+  becomes IN_PROGRESS); `focus <id>` also shows the memory card; focus sessions
+  are history entries `{"type": "focus", "at", "since", "seconds"}`; a weekday
+  due date means the next such day, today included; due dates sort within the
+  same status and priority; overdue/due-today warnings appear under `list` on a
+  terminal.

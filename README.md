@@ -2,21 +2,29 @@
 
 A fast, good-looking task manager for your terminal, written in pure Bash.
 
-> **Status: early development (phase 2 of 6).** The CLI manages tasks,
-> subtasks, comments and the trash. Focus, due dates and the TUI are next.
+> **Status: early development (phase 3 of 6).** The CLI manages tasks,
+> subtasks, comments, due dates, focus sessions and the trash. The TUI is next.
 > See [docs/PRD.md](docs/PRD.md) for the full plan.
 
 ## Quick tour
 
 ```sh
-tdsh add Review firewall rules p:infra pri:high +network   # Created #1
-tdsh add Export current rules ^1                           # subtask of #1
-tdsh start 1 -m "Starting with fw01"
+tdsh add Review firewall rules p:infra pri:high +network due:fri   # Created #1
+tdsh add Export current rules ^1                                   # subtask of #1
+tdsh focus 1                    # start working on it: shows the memory card
 tdsh comment 1 Found an unexpected inbound rule on 8080
+tdsh focus                      # later: what was I doing? status, subtasks, notes
 tdsh list                       # open + recently closed, subtasks indented
-tdsh show 1                     # details, subtasks and history
-tdsh done 2 && tdsh done 1
-tdsh list --status blocked --json | jq -r '.[].title'
+tdsh show 1                     # details, time worked, subtasks and history
+tdsh done 2 && tdsh done 1      # closing the focused task ends the session
+tdsh list --overdue --json | jq -r '.[].title'
+```
+
+Show the focused task in your prompt (zsh):
+
+```sh
+setopt PROMPT_SUBST
+RPROMPT='$(tdsh prompt --time)'   # ◉ #1 Review firewall rules · 25m
 ```
 
 Run `todosh help` for every command and `todosh <command> --help` for details.
