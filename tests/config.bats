@@ -98,6 +98,7 @@ setup() {
   td_config_load 2>/dev/null
   [ ! -e "$marker" ]
   # The editor value is kept verbatim as data.
+  # shellcheck disable=SC2016 # matching the literal text
   [[ ${TD_CONF[editor]} == *'$(touch'* ]]
   [ "${TD_CONF[theme]}" = tokyonight ]
 }

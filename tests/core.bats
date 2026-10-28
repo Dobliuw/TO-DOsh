@@ -46,6 +46,7 @@ setup() {
 }
 
 @test "titles: unicode and symbols accepted" {
+  # shellcheck disable=SC2016 # literal on purpose: must never expand
   td_valid_title 'Revisar reglas del firewall — puerto 8080 ¿ok? $(rm -rf /) "x" & ;'
   td_valid_title "日本語 ✓"
 }
@@ -82,6 +83,7 @@ line two"
 }
 
 @test "td_err records the last error and can be silenced" {
+  # shellcheck disable=SC2034 # read by td_err from the sourced library
   TD_QUIET_ERRORS=1
   run td_err "boom"
   [ -z "$output" ]

@@ -62,6 +62,7 @@ alloc_ids() {
 
 @test "concurrent processes never receive the same ID" {
   td_storage_init
+  # shellcheck disable=SC2016 # expanded by the child bash, not here
   local script='
     shopt -s extglob
     for m in core config storage cli; do source "$1/lib/$m.sh"; done

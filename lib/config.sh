@@ -34,8 +34,8 @@ td_config_valid() {
 # Precedence: TODOSH_*_DIR, then XDG_*_HOME, then the XDG defaults under $HOME.
 td_paths_init() {
   local config_base data_base
-  if [[ -z ${HOME:-} ]] &&
-    [[ -z ${TODOSH_CONFIG_DIR:-}${XDG_CONFIG_HOME:-} || -z ${TODOSH_DATA_DIR:-}${XDG_DATA_HOME:-} ]]; then
+  if [[ -z ${HOME:-} ]] \
+    && [[ -z ${TODOSH_CONFIG_DIR:-}${XDG_CONFIG_HOME:-} || -z ${TODOSH_DATA_DIR:-}${XDG_DATA_HOME:-} ]]; then
     td_err "HOME is not set; set TODOSH_CONFIG_DIR and TODOSH_DATA_DIR"
     return "$TD_E_ERR"
   fi

@@ -1,5 +1,8 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2034
 # core.sh — exit codes, diagnostics, validation and small shared utilities.
+#
+# SC2034 is disabled file-wide: the constants and globals defined here are
+# used by the other modules, which ShellCheck analyzes one file at a time.
 #
 # Error-handling convention (see docs/DEVELOPMENT.md): library functions never
 # call `exit`. They report through td_err and `return` one of the TD_E_* codes;

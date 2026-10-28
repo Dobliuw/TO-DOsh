@@ -10,6 +10,7 @@ declare -gA TD_CMD_SUMMARY=()
 
 # Global output options, set by td_main.
 TD_OPT_JSON=0
+# shellcheck disable=SC2034 # read by the renderer (phase 4)
 TD_OPT_COLOR=auto
 
 # td_register_cmd NAME SUMMARY
@@ -46,10 +47,11 @@ td_main() {
     esac
   done
   set -- "${args[@]}"
+  # shellcheck disable=SC2034 # read by the renderer (phase 4)
   [[ -n ${NO_COLOR:-} ]] && TD_OPT_COLOR=never
 
   if (($# == 0)); then
-    td_cmd_default
+    td_cmd_default "$@"
     return
   fi
   local cmd=$1
@@ -79,7 +81,7 @@ td_wants_help() {
 # Bare `todosh`: the TUI on an interactive terminal (phase 4), `list`
 # otherwise (phase 2). Until those exist, show the help.
 td_cmd_default() {
-  td_cmd_help
+  td_cmd_help "$@"
 }
 
 # --- help ------------------------------------------------------------------

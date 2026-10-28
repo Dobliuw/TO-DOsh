@@ -1,0 +1,3 @@
+# bats runs every @test in its own process, which ShellCheck models as a
+# subshell; variable changes inside a test are intentionally local to it.
+disable=SC2030,SC2031
