@@ -192,11 +192,50 @@ td_task_read() {
   fi
 }
 
-# td_task_write ID JSON — store a task (requires the lock).
+# td_task_write ID JSON [AREA] — store a task (requires the lock).
 td_task_write() {
   local path
-  path=$(td_task_path "$1") || return
+  path=$(td_task_path "$1" "${3:-tasks}") || return
   td_write_json "$path" "$2"
+}
+
+# td_task_move ID FROM TO — move a task file between areas (requires the lock).
+# Both areas live in the same directory tree, so this is an atomic rename.
+td_task_move() {
+  local src dst
+  if ((TD_LOCK_DEPTH == 0)); then
+    td_err "internal error: move without lock: #$1"
+    return "$TD_E_ERR"
+  fi
+  src=$(td_task_path "$1" "$2") || return
+  dst=$(td_task_path "$1" "$3") || return
+  if [[ ! -f $src || -L $src ]]; then
+    td_err "task #$1 not found in $2"
+    return "$TD_E_NOTFOUND"
+  fi
+  if [[ -e $dst || -L $dst ]]; then
+    td_err "cannot move task #$1: it already exists in $3"
+    return "$TD_E_CONFLICT"
+  fi
+  if ! mv -- "$src" "$dst"; then
+    td_err "cannot move task #$1 from $2 to $3"
+    return "$TD_E_ERR"
+  fi
+}
+
+# td_task_remove ID AREA — permanently delete a task file (requires the lock).
+td_task_remove() {
+  local path
+  if ((TD_LOCK_DEPTH == 0)); then
+    td_err "internal error: remove without lock: #$1"
+    return "$TD_E_ERR"
+  fi
+  path=$(td_task_path "$1" "$2") || return
+  if [[ ! -f $path || -L $path ]]; then
+    td_err "task #$1 not found in $2"
+    return "$TD_E_NOTFOUND"
+  fi
+  rm -f -- "$path"
 }
 
 # td_task_ids [AREA] — print stored task IDs in ascending order.
