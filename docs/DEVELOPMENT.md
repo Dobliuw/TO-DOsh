@@ -8,11 +8,15 @@
 | `lib/core.sh` | Exit codes, diagnostics, validators, small utilities |
 | `lib/config.sh` | XDG paths and the `key = value` config file |
 | `lib/storage.sh` | Data directory, lock, atomic JSON writes, IDs |
-| `lib/cli.sh` | Argument parsing, command registry and dispatch, CLI output |
+| `lib/term.sh` | Terminal capabilities (color, Unicode), width, pager, confirm, editor |
+| `lib/tasks.sh` | Business rules: create, edit, status, comments, trash, queries |
+| `lib/cli.sh` | Global flags, command registry and dispatch, help/version/config |
+| `lib/commands.sh` | Task commands: argument parsing and text/JSON presentation |
 | `tests/` | bats test suites; `test_helper.bash` isolates each test |
 
-The CLI and the TUI must only call business functions (`tasks.sh`, `focus.sh`,
-from phase 2 on); neither touches files directly.
+The CLI and the TUI must only call business functions (`tasks.sh`, later
+`focus.sh`); neither touches files directly. Business mutations report their
+result in `TD_RESULT`; queries print JSON.
 
 ## Conventions
 

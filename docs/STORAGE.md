@@ -52,5 +52,52 @@ jq -s 'map(select(.status == "BLOCKED")) | .[].title' ~/.local/share/todosh/task
 Avoid editing files while todosh is running. If you edit one, keep it valid JSON:
 a corrupted file is reported by name rather than silently skipped.
 
-The task record format itself is documented here when the core commands land
-(phase 2).
+## Task record (`tasks/<id>.json`)
+
+```json
+{
+  "id": 42,
+  "title": "Review firewall rules",
+  "description": "Markdown text, may span lines",
+  "status": "IN_PROGRESS",
+  "priority": "high",
+  "project": "infra",
+  "tags": ["network"],
+  "parent": null,
+  "due": null,
+  "created": "2026-10-28T10:21:00Z",
+  "updated": "2026-10-28T11:02:13Z",
+  "closed": null,
+  "history": [
+    {"type": "event", "at": "...", "event": "created"},
+    {"type": "event", "at": "...", "event": "status", "from": "TODO", "to": "IN_PROGRESS"},
+    {"type": "event", "at": "...", "event": "edit", "field": "priority", "from": "med", "to": "high"},
+    {"type": "event", "at": "...", "event": "edit", "field": "description"},
+    {"type": "comment", "at": "...", "text": "Found an unexpected rule on 8080"}
+  ]
+}
+```
+
+| Field | Values |
+|---|---|
+| `status` | `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `CANCELLED` |
+| `priority` | `urgent`, `high`, `med`, `low` |
+| `project`, `tags[]` | `[A-Za-z0-9][A-Za-z0-9._-]{0,31}`; tags are kept sorted and unique |
+| `parent` | ID of the parent task, or `null`. Subtasks are one level deep |
+| `due` | Reserved (phase 3); always `null` for now |
+| `closed` | When the task became `DONE`/`CANCELLED`; `null` while open |
+| timestamps | UTC, ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`) |
+
+History entries are append-only. `type` is `comment` (written by the user) or
+`event` (recorded automatically): `created`, `status` (`from`/`to`), `edit`
+(`field`, plus `from`/`to` except for `description`), `deleted`, `restored`.
+
+Rules enforced by todosh (hand edits should respect them too):
+
+- a subtask's parent exists, is live (not in the trash) and is not a subtask;
+- a `DONE`/`CANCELLED` task has no open subtasks;
+- trashed tasks keep their record; `purge` removes the file for good.
+
+Adding a field is a compatible change and does not bump the schema version;
+readers treat missing fields as their defaults. Renaming or changing the meaning
+of a field requires a new schema version and a migration.

@@ -19,7 +19,7 @@ up to ~400 tasks.
 
 | Concept | Decision |
 |---|---|
-| Statuses | `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `CANCELLED` |
+| Statuses | `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `CANCELLED`. Open tasks move freely; closed tasks only go back to `TODO` (`reopen`) |
 | Priorities | `urgent`, `high`, `med`, `low` |
 | Projects | Every task belongs to one project; default `inbox` |
 | Tags | Zero or more per task |
@@ -64,7 +64,7 @@ Themes: predefined (`tokyonight` default, `catppuccin`, `gruvbox`, `nord`) and
 | Group | Commands |
 |---|---|
 | General | `todosh` (TUI on interactive terminal; `list` otherwise), `help`, `<cmd> --help`, `version` |
-| Create/read | `add "title" [p:proj +tag !prio due:x ^parent]`, `list`, `show`, `search` |
+| Create/read | `add "title" [p:proj +tag pri:prio due:x ^parent]`, `list`, `show`, `search` |
 | Edit | `edit <id>` (opens `$EDITOR`), `edit <id> --title … --priority … --due none` |
 | Status | `start`, `block`, `done`, `cancel`, `reopen` |
 | History | `comment <id> "text"`, `log <id> [--comments\|--events]` |
@@ -76,8 +76,12 @@ Themes: predefined (`tokyonight` default, `catppuccin`, `gruvbox`, `nord`) and
 | Global flags | `--json` (only valid JSON on stdout), `--no-color`, `NO_COLOR` env |
 
 Inline capture shorthand complements long options (`--project`, `--tag`,
-`--priority`, `--due`, `--parent`). `#tag` is deliberately not used: the shell
-treats it as a comment.
+`--priority`, `--due`, `--parent`): `p:NAME`, `+TAG`, `pri:LEVEL`, `^ID` (or
+`parent:ID`), `due:WHEN`. Only whole arguments are tokens; quoted phrases stay
+literal. `#tag` is not used (the shell treats it as a comment) and `!prio` is
+only a quoted alternative (zsh and interactive Bash expand `!` from history).
+
+Subtasks inherit their parent's project unless one is given.
 
 Exit codes: `0` ok · `1` operational error · `2` usage error · `3` not found ·
 `4` conflict / lock busy.
@@ -125,3 +129,7 @@ translations.
 ## 7. Changelog
 
 - 2026-10-28 — Initial approved version.
+- 2026-10-28 — Priority shorthand is `pri:LEVEL` instead of `!LEVEL` (history
+  expansion in zsh/Bash); `parent:ID` added as an alternative to `^ID`; subtasks
+  inherit the parent's project; closing a parent with open subtasks requires
+  `--force` (which closes them too); reopening a subtask reopens its parent.
