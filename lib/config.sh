@@ -103,3 +103,39 @@ td_config_load() {
 td_config_keys() {
   printf '%s\n' "${!TD_CONF_DEFAULTS[@]}" | LC_ALL=C sort
 }
+
+# td_config_set KEY VALUE — set KEY in the config file, keeping the other
+# lines and comments as they are. The file is replaced atomically.
+td_config_set() {
+  local key=$1 value=$2 line found=0 tmp
+  local -a lines=()
+  if [[ ! -v TD_CONF_DEFAULTS[$key] ]]; then
+    td_err "unknown setting: $key"
+    return "$TD_E_USAGE"
+  fi
+  if ! td_config_valid "$key" "$value"; then
+    td_err "invalid value for $key: '$value'"
+    return "$TD_E_USAGE"
+  fi
+  if [[ -f $TD_CONFIG_FILE ]]; then
+    while IFS= read -r line || [[ -n $line ]]; do
+      if ((! found)) && [[ $line =~ ^[[:space:]]*${key}[[:space:]]*= ]]; then
+        line="$key = $value"
+        found=1
+      fi
+      lines+=("$line")
+    done <"$TD_CONFIG_FILE"
+  fi
+  ((found)) || lines+=("$key = $value")
+  if ! mkdir -p -- "$TD_CONFIG_DIR"; then
+    td_err "cannot create $TD_CONFIG_DIR"
+    return "$TD_E_ERR"
+  fi
+  tmp=$(mktemp -- "$TD_CONFIG_DIR/.config.XXXXXXXX") || return "$TD_E_ERR"
+  if ! printf '%s\n' "${lines[@]}" >"$tmp" || ! mv -f -- "$tmp" "$TD_CONFIG_FILE"; then
+    rm -f -- "$tmp"
+    td_err "cannot write $TD_CONFIG_FILE"
+    return "$TD_E_ERR"
+  fi
+  TD_CONF[$key]=$value
+}

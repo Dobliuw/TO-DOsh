@@ -4,6 +4,7 @@
 PREFIX  ?= $(HOME)/.local
 BINDIR  ?= $(PREFIX)/bin
 LIBDIR  ?= $(PREFIX)/lib/todosh
+SHAREDIR ?= $(PREFIX)/share/todosh
 
 BATS       ?= bats
 SHELLCHECK ?= shellcheck
@@ -40,9 +41,10 @@ fmt-check:
 check: lint fmt-check test
 
 install:
-	install -d -m 0755 "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(LIBDIR)"
+	install -d -m 0755 "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(SHAREDIR)/themes"
 	install -m 0755 bin/todosh "$(DESTDIR)$(BINDIR)/todosh"
 	install -m 0644 lib/*.sh "$(DESTDIR)$(LIBDIR)/"
+	install -m 0644 themes/*.theme "$(DESTDIR)$(SHAREDIR)/themes/"
 	ln -sfn todosh "$(DESTDIR)$(BINDIR)/tdsh"
 	@printf 'Installed todosh (and tdsh) to %s\n' "$(DESTDIR)$(BINDIR)"
 
@@ -51,5 +53,7 @@ uninstall:
 	@if [ -L "$(DESTDIR)$(BINDIR)/tdsh" ]; then rm -f "$(DESTDIR)$(BINDIR)/tdsh"; fi
 	rm -f $(patsubst lib/%,"$(DESTDIR)$(LIBDIR)/%",$(wildcard lib/*.sh))
 	-rmdir "$(DESTDIR)$(LIBDIR)" 2>/dev/null
+	rm -f $(patsubst themes/%,"$(DESTDIR)$(SHAREDIR)/themes/%",$(wildcard themes/*.theme))
+	-rmdir "$(DESTDIR)$(SHAREDIR)/themes" "$(DESTDIR)$(SHAREDIR)" 2>/dev/null
 	@printf 'Removed program files. Your tasks and config were not touched:\n'
 	@printf '  %s\n  %s\n' "$${XDG_DATA_HOME:-$$HOME/.local/share}/todosh" "$${XDG_CONFIG_HOME:-$$HOME/.config}/todosh"

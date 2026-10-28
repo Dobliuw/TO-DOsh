@@ -1,0 +1,13 @@
+# Catppuccin Mocha — https://github.com/catppuccin/catppuccin
+fg        = #cdd6f4
+muted     = #6c7086
+accent    = #89b4fa
+border    = #45475a
+selection = #313244
+red       = #f38ba8
+orange    = #fab387
+yellow    = #f9e2af
+green     = #a6e3a1
+cyan      = #89dceb
+blue      = #89b4fa
+magenta   = #cba6f7

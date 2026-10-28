@@ -53,17 +53,28 @@ td_due_parse() {
   _td_due=$_td_res
 }
 
-# td_fmt_duration SECONDS — print a compact duration: 45s, 12m, 1h05m, 2d3h.
+# td_fmt_duration [-v VAR] SECONDS — a compact duration: 45s, 12m, 1h05m,
+# 2d3h. Printed, or stored in VAR with -v (no subshell: used per redraw).
 td_fmt_duration() {
-  local s=$1
-  if ((s < 60)); then
-    printf '%ss\n' "$s"
-  elif ((s < 3600)); then
-    printf '%sm\n' $((s / 60))
-  elif ((s < 86400)); then
-    printf '%sh%02dm\n' $((s / 3600)) $((s % 3600 / 60))
+  local _td_v="" _td_s _td_r
+  if [[ $1 == -v ]]; then
+    _td_v=$2
+    shift 2
+  fi
+  _td_s=$1
+  if ((_td_s < 60)); then
+    printf -v _td_r '%ss' "$_td_s"
+  elif ((_td_s < 3600)); then
+    printf -v _td_r '%sm' $((_td_s / 60))
+  elif ((_td_s < 86400)); then
+    printf -v _td_r '%sh%02dm' $((_td_s / 3600)) $((_td_s % 3600 / 60))
   else
-    printf '%sd%sh\n' $((s / 86400)) $((s % 86400 / 3600))
+    printf -v _td_r '%sd%sh' $((_td_s / 86400)) $((_td_s % 86400 / 3600))
+  fi
+  if [[ -n $_td_v ]]; then
+    printf -v "$_td_v" '%s' "$_td_r"
+  else
+    printf '%s\n' "$_td_r"
   fi
 }
 

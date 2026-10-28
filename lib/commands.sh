@@ -577,6 +577,30 @@ _td_seconds_since() {
   printf '%s\n' $((now > start ? now - start : 0))
 }
 
+# jq definitions shared by the CLI and the TUI: entry_text describes one
+# history entry. Needs --arg arrow and --arg none (symbols).
+# shellcheck disable=SC2016 # jq code
+readonly TD_JQ_EVENT='
+def clean: split("\n") | map(gsub("[[:cntrl:]]"; " ")) | join("\n");
+def dur: if . < 60 then "\(.)s" elif . < 3600 then "\(. / 60 | floor)m"
+  else "\(. / 3600 | floor)h\(. % 3600 / 60 | floor | tostring | if length < 2 then "0" + . else . end)m" end;
+def val: if . == null then $none
+  elif type == "array" then (map("+" + .) | join(" ") | if . == "" then $none else . end)
+  else tostring end;
+def entry_text:
+  (if .type == "comment" then .text
+   elif .event == "created" then "created"
+   elif .event == "status" then "status \(.from) \($arrow) \(.to)"
+   elif .event == "edit" and .field == "description" then "description edited"
+   elif .event == "edit" and .field == "parent" then
+     "parent \(.from | if . then "#\(.)" else $none end) \($arrow) \(.to | if . then "#\(.)" else $none end)"
+   elif .event == "edit" then "\(.field) \(.from | val) \($arrow) \(.to | val)"
+   elif .event == "deleted" then "moved to the trash"
+   elif .event == "restored" then "restored from the trash"
+   elif .type == "focus" then "focus session \(.seconds | dur)"
+   else (.event // .type) end) | clean;
+'
+
 # _td_render_history RECORD KIND — KIND: all | comments | events
 _td_render_history() {
   local at type text first rest
@@ -592,27 +616,12 @@ _td_render_history() {
     else
       printf '  %s%s  %s %s%s\n' "${TD_SGR[gray]}" "$at" "${TD_SYM[event]}" "$text" "${TD_SGR[reset]}"
     fi
-  done < <(jq -j --arg kind "$2" --arg arrow "${TD_SYM[arrow]}" --arg none "${TD_SYM[dash]}" '
-    def clean: split("\n") | map(gsub("[[:cntrl:]]"; " ")) | join("\n");
-    def dur: if . < 60 then "\(.)s" elif . < 3600 then "\(. / 60 | floor)m"
-             else "\(. / 3600 | floor)h\(. % 3600 / 60 | floor | tostring | if length < 2 then "0" + . else . end)m" end;
-    def val: if . == null then $none elif type == "array" then (map("+" + .) | join(" ") | if . == "" then $none else . end)
-             else tostring end;
+  done < <(jq -j --arg kind "$2" --arg arrow "${TD_SYM[arrow]}" --arg none "${TD_SYM[dash]}" \
+    "$TD_JQ_EVENT"'
     .history[]
     | select($kind == "all" or ($kind == "comments" and .type == "comment")
              or ($kind == "events" and .type != "comment"))
-    | [(.at | fromdateiso8601 | strflocaltime("%Y-%m-%d %H:%M")), .type,
-       (if .type == "comment" then .text
-        elif .event == "created" then "created"
-        elif .event == "status" then "status \(.from) \($arrow) \(.to)"
-        elif .event == "edit" and .field == "description" then "description edited"
-        elif .event == "edit" and .field == "parent" then
-          "parent \(.from | if . then "#\(.)" else $none end) \($arrow) \(.to | if . then "#\(.)" else $none end)"
-        elif .event == "edit" then "\(.field) \(.from | val) \($arrow) \(.to | val)"
-        elif .event == "deleted" then "moved to the trash"
-        elif .event == "restored" then "restored from the trash"
-        elif .type == "focus" then "focus session \(.seconds | dur)"
-        else (.event // .type) end | clean)]
+    | [(.at | fromdateiso8601 | strflocaltime("%Y-%m-%d %H:%M")), .type, entry_text]
     | join("\u001f") + "\u0000"' <<<"$1")
 }
 
@@ -1456,4 +1465,116 @@ td_cmd_prompt() {
   ((icon)) && out="${TD_SYM[focus]} $out"
   ((with_time)) && out+=" · $(td_fmt_duration "$session")"
   printf '%s\n' "$out"
+}
+
+# --- interface and themes --------------------------------------------------
+
+td_register_cmd tui General "Open the full-screen interface (same as bare todosh)"
+td_help_tui() {
+  printf '%s\n' "Usage: todosh tui" "" \
+    "Opens the interactive interface. Press ? inside it for the keys." \
+    "Bare 'todosh' does the same when run in a terminal."
+}
+
+td_cmd_tui() {
+  if td_wants_help "$@"; then
+    td_help_tui
+    return 0
+  fi
+  if (($#)); then
+    td_usage_err tui "unexpected argument: $1"
+    return
+  fi
+  td_tui_main
+}
+
+td_register_cmd theme General "List, preview, set or import interface themes"
+td_help_theme() {
+  printf '%s\n' \
+    "Usage: todosh theme [list | show [NAME] | set NAME | import kitty [FILE]]" \
+    "" \
+    "  list          Available themes; * marks the current one (default)" \
+    "  show [NAME]   Preview the colors of a theme" \
+    "  set NAME      Use NAME (saved as 'theme' in the config file)" \
+    "  import kitty  Create the theme 'kitty' from your kitty colors and use it" \
+    "" \
+    "Themes are 'key = #rrggbb' files. Your own go in" \
+    "  ${TD_CONFIG_DIR:-~/.config/todosh}/themes/NAME.theme" \
+    "Keys: ${TD_THEME_KEYS[*]}"
+}
+
+td_cmd_theme() {
+  if td_wants_help "$@"; then
+    td_help_theme
+    return 0
+  fi
+  local sub=${1:-list}
+  (($#)) && shift
+  case $sub in
+    list)
+      (($#)) && {
+        td_usage_err theme "unexpected argument: $1"
+        return
+      }
+      local name src
+      if ((TD_OPT_JSON)); then
+        td_theme_list | jq -R --arg cur "${TD_CONF[theme]}" -n '[inputs | split("\t")
+          | {name: .[0], source: .[1], current: (.[0] == $cur)}]'
+        return
+      fi
+      while IFS=$'\t' read -r name src; do
+        if [[ $name == "${TD_CONF[theme]}" ]]; then
+          printf '* %-14s %s\n' "$name" "$src"
+        else
+          printf '  %-14s %s\n' "$name" "$src"
+        fi
+      done < <(td_theme_list)
+      ;;
+    show)
+      local name=${1:-${TD_CONF[theme]}}
+      td_theme_load "$name" || return
+      if ((TD_OPT_JSON)); then
+        local -a pairs=()
+        local key
+        for key in "${TD_THEME_KEYS[@]}"; do pairs+=(--arg "$key" "${TD_THEME[$key]}"); done
+        jq -n --arg name "$name" '{name: $name, colors: $ARGS.named | del(.name)}' "${pairs[@]}"
+        return
+      fi
+      td_color_tier
+      td_theme_sgr
+      printf 'Theme %s (color tier %s)\n' "$name" "$TD_TIER"
+      local key
+      for key in "${TD_THEME_KEYS[@]}"; do
+        if [[ $key == selection ]]; then
+          printf '  %-10s %s  %s sample %s\n' "$key" "${TD_THEME[$key]}" "${TD_TC[sel]}${TD_TC[fg]}" "${TD_TC[reset]}"
+        else
+          printf '  %-10s %s  %s███ sample%s\n' "$key" "${TD_THEME[$key]}" "${TD_TC[$key]}" "${TD_TC[reset]}"
+        fi
+      done
+      ;;
+    set)
+      if (($# != 1)); then
+        td_usage_err theme "usage: todosh theme set NAME"
+        return
+      fi
+      td_theme_path "$1" >/dev/null || return
+      td_config_set theme "$1" || return
+      ((TD_OPT_JSON)) && jq -n --arg t "$1" '{theme: $t}' || printf 'Theme set to %s\n' "$1"
+      ;;
+    import)
+      if [[ ${1:-} != kitty ]]; then
+        td_usage_err theme "only 'todosh theme import kitty [FILE]' is supported"
+        return
+      fi
+      td_theme_import_kitty "${2:-}" || return
+      local file=$TD_RESULT
+      td_config_set theme kitty || return
+      if ((TD_OPT_JSON)); then
+        jq -n --arg f "$file" '{theme: "kitty", file: $f}'
+      else
+        printf 'Imported your kitty colors into %s\nTheme set to kitty\n' "$file"
+      fi
+      ;;
+    *) td_usage_err theme "unknown subcommand: $sub" ;;
+  esac
 }

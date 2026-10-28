@@ -54,9 +54,10 @@ td_main() {
   set -- "${args[@]}"
   [[ -n ${NO_COLOR:-} ]] && TD_OPT_COLOR=never
 
-  # Bare `todosh` lists tasks; on an interactive terminal it will open the
-  # TUI once that exists (phase 4).
+  # Bare `todosh` opens the interface on an interactive terminal and lists
+  # tasks otherwise (pipes, scripts, cron).
   local cmd=list
+  [[ -t 0 && -t 1 ]] && cmd=tui
   if (($#)); then
     cmd=$1
     shift
@@ -108,7 +109,7 @@ td_cmd_help() {
     "todosh — terminal task manager" \
     "" \
     "Usage:" \
-    "  todosh                    List tasks (the TUI will open here)" \
+    "  todosh                    Open the interface (lists tasks when not a terminal)" \
     "  todosh <command> [args] [--json] [--no-color]"
   for group in "${TD_CMD_GROUPS[@]}"; do
     printf '\n%s:\n' "$group"

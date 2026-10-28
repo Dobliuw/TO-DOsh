@@ -13,15 +13,19 @@ shopt -s extglob
 
 td_self=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
 td_root=${td_self%/*/*}
-# Installed layout: PREFIX/bin/todosh + PREFIX/lib/todosh/; repo layout: bin/ + lib/.
+# Installed layout: PREFIX/bin/todosh, PREFIX/lib/todosh/, PREFIX/share/todosh/;
+# repo layout: bin/, lib/, themes/. TD_SHARE_DIR is read by theme.sh.
+# shellcheck disable=SC2034
 if [[ -f $td_root/lib/todosh/core.sh ]]; then
   TD_LIB_DIR=$td_root/lib/todosh
+  TD_SHARE_DIR=$td_root/share/todosh
 else
   TD_LIB_DIR=$td_root/lib
+  TD_SHARE_DIR=$td_root
 fi
 unset td_self td_root
 
-for td_module in core config storage dates term tasks focus cli commands; do
+for td_module in core config storage dates term theme tasks focus cli commands tui; do
   # shellcheck source=/dev/null
   source "$TD_LIB_DIR/$td_module.sh" || {
     printf 'todosh: cannot load %s\n' "$TD_LIB_DIR/$td_module.sh" >&2

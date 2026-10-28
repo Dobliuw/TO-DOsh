@@ -43,11 +43,11 @@ td_term_init() {
   if ((TD_UNICODE)); then
     TD_SYM=([TODO]="○" [IN_PROGRESS]="◐" [BLOCKED]="⊘" [DONE]="✓" [CANCELLED]="✗"
       [arrow]="→" [ellipsis]="…" [comment]="»" [event]="·" [child]="↳" [dash]="—"
-      [focus]="◉" [warn]="⚠" [time]="⏱")
+      [focus]="◉" [warn]="⚠" [time]="⏱" [select]="❯")
   else
     TD_SYM=([TODO]="[ ]" [IN_PROGRESS]="[~]" [BLOCKED]="[!]" [DONE]="[x]" [CANCELLED]="[-]"
       [arrow]="->" [ellipsis]="~" [comment]=">" [event]="*" [child]="\\" [dash]="-"
-      [focus]="@" [warn]="!" [time]="~")
+      [focus]="@" [warn]="!" [time]="~" [select]=">")
   fi
 }
 

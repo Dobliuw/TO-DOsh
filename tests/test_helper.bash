@@ -3,6 +3,8 @@
 # the user's real configuration and tasks are never touched.
 
 TD_ROOT=$(cd -- "$BATS_TEST_DIRNAME/.." && pwd)
+# Built-in themes, as bin/todosh sets it for the repo layout.
+TD_SHARE_DIR=$TD_ROOT
 
 td_test_setup() {
   export HOME="$BATS_TEST_TMPDIR/home dir"
