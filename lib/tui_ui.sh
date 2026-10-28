@@ -147,6 +147,12 @@ _tui_ov() {
 # _tui_paint — print the main screen and every layer in one write.
 _tui_paint() {
   local out=$TUI_BASE layer item
+  # Graphics (the kitty logo) are sent once per screen, before the cells
+  # that show them.
+  if [[ -n ${TUI_LOGO_TX:-} ]] && ((! TUI_LOGO_SENT)); then
+    out=$TUI_LOGO_TX$out
+    TUI_LOGO_SENT=1
+  fi
   TUI_OV=()
   for layer in "${TUI_LAYERS[@]}"; do "$layer"; done
   [[ ${#TUI_LAYERS[@]} -eq 0 ]] && declare -F _tui_toast_layer >/dev/null && _tui_toast_layer

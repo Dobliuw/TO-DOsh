@@ -174,6 +174,8 @@ td_help_config() {
     "                      the path of a text file with your own art" \
     "  logo                Path of a logo next to the title: a text file, or an" \
     "                      image (png, jpg, gif, webp; needs chafa)" \
+    "  logo_render         auto | kitty | blocks: draw image logos with kitty's" \
+    "                      graphics protocol (sharp), or as chafa blocks" \
     "  tagline             One line under the title" \
     "  editor              Command to edit descriptions (default: \$VISUAL," \
     "                      then \$EDITOR, then vi)" \

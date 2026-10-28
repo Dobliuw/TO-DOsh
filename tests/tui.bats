@@ -447,7 +447,7 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   TD_CONF["logo"]=$BATS_TEST_TMPDIR/logo.txt
   _tui_select_group docs
   run frame 40 205
-  [[ $output == *"LOGO1   "*'$$$$$$$$'* ]]
+  [[ $output == *"LOGO1  "*'$$$$$$$$'* ]]
   # A fake chafa: prints colored blocks plus a cursor sequence to be dropped.
   mkdir -p "$BATS_TEST_TMPDIR/bin"
   # It only answers when called with --probe=off and no terminal on stdin:
@@ -460,9 +460,10 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   chmod +x "$BATS_TEST_TMPDIR/bin/chafa"
   touch "$BATS_TEST_TMPDIR/logo.png"
   TD_CONF["logo"]=$BATS_TEST_TMPDIR/logo.png
+  TD_CONF["logo_render"]=blocks
   PATH="$BATS_TEST_TMPDIR/bin:$PATH"
   run frame 40 205
-  [[ $output == *"####   "*'$$$$$$$$'* ]]
+  [[ $output == *"####  "*'$$$$$$$$'* ]]
   [[ $(_tui_frame) != *$'\e[?25l'* ]]
   # The width is still exact.
   local line
@@ -485,4 +486,75 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   [[ $output == *"Welcome to todosh"* ]]
   [[ $output == *"Tasks are read from $BATS_TEST_TMPDIR/empty"* ]]
   [[ $output == *"To-do tracking from & for the terminal."* ]]
+}
+
+# make_png FILE W H — a PNG signature and IHDR header with the given size:
+# all the logo code reads (the image data itself is passed through).
+make_png() {
+  local size
+  printf -v size '%08x%08x' "$2" "$3"
+  {
+    printf '\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR'
+    local i
+    for ((i = 0; i < 16; i += 2)); do printf '%b' "\\x${size:i:2}"; done
+    printf '\x08\x02\x00\x00\x00'
+  } >"$1"
+}
+
+# fake_ffmpeg — an ffmpeg that copies its input (-i FILE) to its output (last arg).
+fake_ffmpeg() {
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  # shellcheck disable=SC2016 # a script for /bin/sh, expanded there
+  printf '%s\n' '#!/bin/sh' 'in=""; out=""' \
+    'while [ $# -gt 0 ]; do [ "$1" = -i ] && in=$2; out=$1; shift; done' \
+    'cp "$in" "$out"' >"$BATS_TEST_TMPDIR/bin/ffmpeg"
+  chmod +x "$BATS_TEST_TMPDIR/bin/ffmpeg"
+  PATH="$BATS_TEST_TMPDIR/bin:$PATH"
+  export XDG_CACHE_HOME="$BATS_TEST_TMPDIR/cache"
+}
+
+@test "kitty: image logos are sent once with the graphics protocol and drawn with placeholders" {
+  make_png "$BATS_TEST_TMPDIR/logo.jpg" 300 300
+  [ "$(_tui_png_size "$BATS_TEST_TMPDIR/logo.jpg")" = "300 300" ]
+  fake_ffmpeg
+  TD_CONF["logo"]=$BATS_TEST_TMPDIR/logo.jpg
+  TD_CONF["logo_render"]=kitty
+  TD_TIER=3
+  _tui_logo_prepare 4
+  [[ $TUI_LOGO_TX == $'\e_Ga=T,U=1,f=100,t=d,i=237,c=8,r=4,q=2,m=0;'* ]]
+  [ "$TUI_LOGO_W" -eq 8 ]
+  [ "${#TUI_LOGO_LINES[@]}" -eq 4 ]
+  # Row 1, columns 0 and 1: placeholder + row diacritic + column diacritic.
+  [[ ${TUI_LOGO_LINES[1]} == $'\e[38;5;237m\U10EEEE̍̅\U10EEEE̍̍'* ]]
+  # Outside kitty (or with logo_render = blocks) no graphics are used.
+  TD_CONF["logo_render"]=blocks
+  _tui_logo_prepare 4
+  [ -z "$TUI_LOGO_TX" ]
+}
+
+@test "kitty: the banner keeps its width and paint sends the image once per screen" {
+  make_png "$BATS_TEST_TMPDIR/logo.png" 300 300
+  fake_ffmpeg
+  TD_CONF["logo"]=$BATS_TEST_TMPDIR/logo.png
+  TD_CONF["logo_render"]=kitty
+  TD_TIER=3
+  TUI_BANNER_KEY=""
+  _tui_banner_build 90
+  [ -n "$TUI_LOGO_TX" ]
+  local line plain
+  for line in "${TUI_BANNER[@]}"; do
+    plain=${line//$'\e['*([0-9;])m/}
+    plain=${plain//[$'̅̍̎̐̒̽̾̿͆͊͋͌͐͑͒͗']/}
+    [ "${#plain}" -eq 90 ]
+  done
+  # The big title fits next to a 16-column logo in 90 columns.
+  [[ ${TUI_BANNER[0]} == *'$$$$$$$$'* ]]
+  TUI_LOGO_SENT=0 TUI_BASE="" TUI_LAYERS=()
+  unset -f _tui_paint
+  source "$TD_ROOT/lib/tui_ui.sh"
+  run _tui_paint
+  [[ $output == $'\e_Ga=T'* ]]
+  _tui_paint >/dev/null
+  run _tui_paint
+  [[ $output != *$'\e_G'* ]]
 }

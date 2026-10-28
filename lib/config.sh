@@ -18,6 +18,7 @@ declare -grA TD_CONF_DEFAULTS=(
   [background]=solid
   [banner]=auto
   [logo]=""
+  [logo_render]=auto
   [tagline]="To-do tracking from & for the terminal."
 )
 
@@ -34,6 +35,7 @@ td_config_valid() {
     background) td_in_list "$value" solid terminal ;;
     banner) td_in_list "$value" auto big small none || [[ $value == /* || $value == \~/* ]] ;;
     logo) [[ -z $value || $value == /* || $value == \~/* ]] && [[ $value != *[[:cntrl:]]* ]] ;;
+    logo_render) td_in_list "$value" auto kitty blocks ;;
     tagline) [[ $value != *[[:cntrl:]]* ]] && ((${#value} <= 120)) ;;
     *) return 1 ;;
   esac

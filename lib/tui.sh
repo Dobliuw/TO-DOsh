@@ -129,10 +129,16 @@ _tui_enter() {
   # Alternate screen, hidden cursor, no autowrap, background of the theme.
   printf '\e[?1049h\e[?25l\e[?7l%s\e[2J' "${TUI_B[main]}"
   TUI_ACTIVE=1
+  # Images live per screen: send the logo again on the next paint.
+  TUI_LOGO_SENT=0
 }
 
 _tui_leave() {
   ((TUI_ACTIVE)) || return 0
+  # Delete the logo image (kitty graphics), if it was sent.
+  if ((TUI_LOGO_SENT)); then
+    printf '%s' $'\e_Ga=d,d=I,i='"$TUI_LOGO_ID"$',q=2\e\\'
+  fi
   printf '\e[0m\e[2J\e[?7h\e[?25h\e[?1049l'
   [[ -n $TUI_STTY ]] && stty "$TUI_STTY" </dev/tty
   TUI_ACTIVE=0
@@ -651,48 +657,168 @@ _tui_banner_art() {
   printf '%s\n' "${lines[@]}"
 }
 
-# _tui_logo_lines HEIGHT — print the logo (text file, or image through chafa)
-# at most HEIGHT rows tall. Image renders are cached on disk.
-_tui_logo_lines() {
-  local rows=$1 file
+# --- logo --------------------------------------------------------------------
+# A logo is a text file (ASCII art) or an image. Images are drawn:
+#   kitty   with the kitty graphics protocol: the real picture, sharp. The PNG
+#           is sent once as a "virtual placement"; the screen then holds
+#           Unicode placeholder cells (U+10EEEE + row/column diacritics) that
+#           redraw like any text. q=2: kitty sends no replies to read.
+#   blocks  as colored character blocks through chafa (other terminals).
+# _tui_logo_prepare sets TUI_LOGO_LINES (pre-colored lines), TUI_LOGO_W (their
+# width in columns) and TUI_LOGO_TX (graphics data to send once, or "").
+
+readonly TUI_LOGO_ID=237
+# The first 32 diacritics of kitty's rowcolumn-diacritics table (index =
+# row or column), as emitted by `kitten icat --unicode-placeholder`.
+readonly TUI_KITTY_DIACRITICS=($'\u0305' $'\u030D' $'\u030E' $'\u0310' $'\u0312'
+  $'\u033D' $'\u033E' $'\u033F' $'\u0346' $'\u034A' $'\u034B' $'\u034C' $'\u0350'
+  $'\u0351' $'\u0352' $'\u0357' $'\u035B' $'\u0363' $'\u0364' $'\u0365' $'\u0366'
+  $'\u0367' $'\u0368' $'\u0369' $'\u036A' $'\u036B' $'\u036C' $'\u036D' $'\u036E'
+  $'\u036F' $'\u0483' $'\u0484')
+declare -ga TUI_LOGO_LINES=()
+TUI_LOGO_W=0 TUI_LOGO_TX="" TUI_LOGO_SENT=0
+
+# _tui_kitty_graphics — succeed when kitty's graphics protocol can be used.
+_tui_kitty_graphics() {
+  [[ ${TD_CONF[logo_render]:-auto} != blocks ]] || return 1
+  ((TD_TIER >= 2)) || return 1
+  [[ ${TD_CONF[logo_render]:-auto} == kitty || -n ${KITTY_WINDOW_ID:-} || ${TERM:-} == xterm-kitty ]]
+}
+
+# _tui_png_size FILE — print "WIDTH HEIGHT" from a PNG header (no tools needed).
+_tui_png_size() {
+  local -a b
+  read -ra b < <(od -An -tu1 -j16 -N8 -- "$1" 2>/dev/null)
+  ((${#b[@]} == 8)) || return 1
+  printf '%s %s\n' $(((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3])) \
+    $(((b[4] << 24) | (b[5] << 16) | (b[6] << 8) | b[7]))
+}
+
+# _tui_logo_png FILE CACHE_DIR — print a small PNG of the image: converted and
+# scaled by ffmpeg when available (cached), else FILE itself if it is a PNG.
+_tui_logo_png() {
+  local file=$1 cache=$2 key out
+  if command -v ffmpeg >/dev/null 2>&1; then
+    key=$(printf '%s %s' "$file" "$(stat -c '%s-%Y' -- "$file" 2>/dev/null)" | cksum)
+    out=$cache/logo-${key%% *}.png
+    if [[ ! -s $out ]]; then
+      mkdir -p -- "$cache" 2>/dev/null || return 1
+      ffmpeg -nostdin -loglevel error -y -i "$file" -vf "scale='min(256,iw)':-2" \
+        -frames:v 1 "$out" </dev/null >/dev/null 2>&1 || {
+        rm -f -- "$out"
+        return 1
+      }
+    fi
+    printf '%s\n' "$out"
+  elif [[ ${file,,} == *.png ]]; then
+    printf '%s\n' "$file"
+  else
+    return 1
+  fi
+}
+
+# _tui_logo_kitty FILE ROWS CACHE — prepare the kitty placeholder rendering.
+_tui_logo_kitty() {
+  local file=$1 rows=$2 png size w h cols data chunk r line cells
+  png=$(_tui_logo_png "$file" "$3") || return 1
+  size=$(_tui_png_size "$png") || return 1
+  read -r w h <<<"$size"
+  ((w > 0 && h > 0)) || return 1
+  # Cells are about twice as tall as wide.
+  cols=$(((rows * 2 * w + h / 2) / h))
+  ((cols < 2)) && cols=2
+  ((cols > rows * 4)) && cols=$((rows * 4))
+  data=$(base64 -w0 -- "$png") || return 1
+  TUI_LOGO_TX=""
+  local first=1 more
+  while [[ -n $data ]]; do
+    chunk=${data:0:4096}
+    data=${data:4096}
+    more=0
+    [[ -n $data ]] && more=1
+    if ((first)); then
+      TUI_LOGO_TX+=$'\e_G'"a=T,U=1,f=100,t=d,i=$TUI_LOGO_ID,c=$cols,r=$rows,q=2,m=$more;$chunk"$'\e\\'
+      first=0
+    else
+      TUI_LOGO_TX+=$'\e_G'"m=$more;$chunk"$'\e\\'
+    fi
+  done
+  # Each placeholder cell: U+10EEEE + row diacritic + column diacritic; the
+  # image id is the cells' (256-color) foreground.
+  local c
+  TUI_LOGO_LINES=()
+  for ((r = 0; r < rows; r++)); do
+    line=$'\e[38;5;'"${TUI_LOGO_ID}m"
+    for ((c = 0; c < cols; c++)); do
+      line+=$'\U10EEEE'"${TUI_KITTY_DIACRITICS[r]}${TUI_KITTY_DIACRITICS[c]}"
+    done
+    TUI_LOGO_LINES+=("$line"$'\e[39m')
+  done
+  TUI_LOGO_W=$cols
+}
+
+# _tui_logo_blocks FILE ROWS CACHE — prepare the chafa rendering.
+_tui_logo_blocks() {
+  local file=$1 rows=$2 cache=$3 key colors=full line plain
+  command -v chafa >/dev/null 2>&1 || return 1
+  ((TD_TIER == 2)) && colors=256
+  ((TD_TIER <= 1)) && colors=16
+  key=$(stat -c '%s-%Y' -- "$file" 2>/dev/null)-$rows-$colors-${TD_THEME[bg]#\#}
+  key=$(printf '%s %s' "$file" "$key" | cksum)
+  key=${key%% *}
+  if [[ ! -f $cache/logo-$key.ans ]]; then
+    mkdir -p -- "$cache" 2>/dev/null || return 1
+    # --probe=off and no stdin: by default chafa queries the terminal and
+    # waits for the answers, which would arrive in the TUI as key presses.
+    local -a guard=()
+    command -v timeout >/dev/null 2>&1 && guard=(timeout 15)
+    "${guard[@]}" chafa --probe=off --polite=on --format=symbols --colors="$colors" \
+      --size=$((rows * 2))x"$rows" --bg="${TD_THEME[bg]}" --animate=off -- "$file" \
+      >"$cache/logo-$key.ans" 2>/dev/null </dev/null || {
+      rm -f -- "$cache/logo-$key.ans"
+      return 1
+    }
+  fi
+  TUI_LOGO_LINES=()
+  TUI_LOGO_W=0
+  while IFS= read -r line; do
+    # Keep only colors: drop cursor and mode sequences.
+    line=${line//$'\e[?'*([0-9;])[a-zA-Z]/}
+    TUI_LOGO_LINES+=("$line")
+    plain=${line//$'\e['*([0-9;])m/}
+    ((${#plain} > TUI_LOGO_W)) && TUI_LOGO_W=${#plain}
+  done <"$cache/logo-$key.ans"
+  return 0
+}
+
+# _tui_logo_prepare ROWS — fill TUI_LOGO_* for the configured logo.
+_tui_logo_prepare() {
+  local rows=$1 file cache=${XDG_CACHE_HOME:-$HOME/.cache}/todosh line
+  TUI_LOGO_LINES=() TUI_LOGO_W=0 TUI_LOGO_TX=""
   [[ -n ${TD_CONF[logo]:-} ]] || return 0
   file=$(_tui_expand_path "${TD_CONF[logo]}")
   [[ -f $file && -r $file ]] || return 0
   case ${file,,} in
     *.png | *.jpg | *.jpeg | *.gif | *.webp | *.bmp)
-      command -v chafa >/dev/null 2>&1 || return 0
-      local cache=${XDG_CACHE_HOME:-$HOME/.cache}/todosh key colors=full
-      ((TD_TIER == 2)) && colors=256
-      ((TD_TIER <= 1)) && colors=16
-      key=$(stat -c '%s-%Y' -- "$file" 2>/dev/null)-$rows-$colors-${TD_THEME[bg]#\#}
-      key=$(printf '%s %s' "$file" "$key" | cksum)
-      key=${key%% *}
-      if [[ ! -f $cache/logo-$key.ans ]]; then
-        mkdir -p -- "$cache" 2>/dev/null || return 0
-        # --probe=off and no stdin: by default chafa queries the terminal and
-        # waits for the answers, which would arrive in the TUI as key presses.
-        local -a guard=()
-        command -v timeout >/dev/null 2>&1 && guard=(timeout 15)
-        "${guard[@]}" chafa --probe=off --polite=on --format=symbols --colors="$colors" \
-          --size=$((rows * 2))x"$rows" --bg="${TD_THEME[bg]}" --animate=off -- "$file" \
-          >"$cache/logo-$key.ans" 2>/dev/null </dev/null || {
-          rm -f -- "$cache/logo-$key.ans"
-          return 0
-        }
+      if _tui_kitty_graphics && _tui_logo_kitty "$file" "$rows" "$cache"; then
+        TUI_LOGO_SENT=0
+        return 0
       fi
-      # Keep only colors: drop cursor and mode sequences chafa may add.
-      local line
-      while IFS= read -r line; do
-        line=${line//$'\e[?'*([0-9;])[a-zA-Z]/}
-        printf '%s\n' "$line"
-      done <"$cache/logo-$key.ans"
+      TUI_LOGO_TX=""
+      _tui_logo_blocks "$file" "$rows" "$cache" || TUI_LOGO_LINES=()
       ;;
-    *) head -n "$rows" -- "$file" ;;
+    *)
+      mapfile -t -n "$rows" TUI_LOGO_LINES <"$file"
+      for line in "${TUI_LOGO_LINES[@]}"; do
+        ((${#line} > TUI_LOGO_W)) && TUI_LOGO_W=${#line}
+      done
+      ;;
   esac
+  return 0
 }
 
 _tui_banner_build() {
-  local width=$1 key="$1:${TD_THEME_NAME}:$TD_TIER:${TD_CONF[banner]}:${TD_CONF[logo]}:${TD_CONF[tagline]}"
+  local width=$1 key="$1:${TD_THEME_NAME}:$TD_TIER:${TD_CONF[banner]}:${TD_CONF[logo]}:${TD_CONF[tagline]}:${TD_CONF[logo_render]:-}"
   [[ $key == "$TUI_BANNER_KEY" ]] && return 0
   TUI_BANNER_KEY=$key
   TUI_BANNER=()
@@ -700,13 +826,14 @@ _tui_banner_build() {
 
   local -a art=() logo=()
   local line lw=0 aw=0 i n
-  mapfile -t logo < <(_tui_logo_lines 8)
-  for line in "${logo[@]}"; do
-    local plain=${line//$'\e['*([0-9;])m/}
-    ((${#plain} > lw)) && lw=${#plain}
-  done
-  ((lw > width / 3)) && logo=() lw=0
-  local room=$((width - 4 - (lw ? lw + 3 : 0)))
+  _tui_logo_prepare 8
+  logo=("${TUI_LOGO_LINES[@]}")
+  lw=$TUI_LOGO_W
+  if ((lw > width / 3)); then
+    logo=() lw=0 TUI_LOGO_TX=""
+  fi
+  # Margins: 2 on the left, 1 on the right, 2 between logo and title.
+  local room=$((width - 3 - (lw ? lw + 2 : 0)))
   mapfile -t art < <(_tui_banner_art "$room")
   for line in "${art[@]}"; do ((${#line} > aw)) && aw=${#line}; done
   local tagline=${TD_CONF[tagline]:-}
@@ -732,8 +859,8 @@ _tui_banner_build() {
   done
 
   local rows=$((${#art[@]} > ${#logo[@]} ? ${#art[@]} : ${#logo[@]}))
-  local block=$(((lw ? lw + 3 : 0) + aw))
-  local left=$((width - block - 2))
+  local block=$(((lw ? lw + 2 : 0) + aw))
+  local left=$((width - block - 1))
   ((left < 2)) && left=2
   local r plain
   for ((r = 0; r < rows; r++)); do
@@ -741,11 +868,18 @@ _tui_banner_build() {
     _tl_gap "$left"
     if ((lw)); then
       line=${logo[r]:-}
-      plain=${line//$'\e['*([0-9;])m/}
-      # Pre-colored text: appended as is, counted by its visible width.
+      # Pre-colored text: appended as is. Its width is known (placeholder
+      # cells carry combining marks, so ${#} would overcount).
       TL+=$TLBASE$line$TLBASE
-      TLW=$((TLW + ${#plain}))
-      _tl_gap $((lw - ${#plain} + 3))
+      if [[ -n $TUI_LOGO_TX ]]; then
+        plain=$lw
+        [[ -z $line ]] && plain=0
+      else
+        plain=${line//$'\e['*([0-9;])m/}
+        plain=${#plain}
+      fi
+      TLW=$((TLW + plain))
+      _tl_gap $((lw - plain + 2))
     fi
     [[ -n ${art[r]:-} ]] && _tl_add "${colors[r]}${TD_TC[bold]}" "${art[r]}"
     _tl_end
@@ -753,7 +887,7 @@ _tui_banner_build() {
   done
   if [[ -n $tagline ]]; then
     _tl_start "$width"
-    _tl_gap $((width - ${#tagline} - 2))
+    _tl_gap $((width - ${#tagline} - 1))
     _tl_add "${TD_TC[muted]}${TD_TC[italic]}" "$tagline"
     _tl_end
     TUI_BANNER+=("$TL")
@@ -1545,6 +1679,7 @@ _tui_settings() {
   td_in_list "$banner" auto big small none || banner=auto
   _tui_form_add banner segment "Banner" "$banner" "auto big small none"
   _tui_form_add logo text "Logo" "${TD_CONF[logo]}" "" "path, e.g. ~/logo.png (needs chafa) or ~/logo.txt"
+  _tui_form_add logo_render segment "Logo as" "${TD_CONF[logo_render]}" "auto kitty blocks"
   _tui_form_add tagline text "Tagline" "${TD_CONF[tagline]}" "" "one line under the title"
   _tui_form_add save button "Save" "" submit
   _tui_form_add cancel button "Cancel" "" cancel
@@ -1579,13 +1714,13 @@ _tui_preview_theme() {
 
 _tui_settings_save() {
   local key
-  for key in theme icons color background archive_after_days default_project editor banner logo tagline; do
+  for key in theme icons color background archive_after_days default_project editor banner logo logo_render tagline; do
     if ! td_config_valid "$key" "${F_VAL[$key]}"; then
       F_ERR="Invalid value for ${F_LABEL[$key],,}: '${F_VAL[$key]}'" F_ERR_FIELD=$key
       return 1
     fi
   done
-  for key in theme icons color background archive_after_days default_project editor banner logo tagline; do
+  for key in theme icons color background archive_after_days default_project editor banner logo logo_render tagline; do
     [[ ${F_VAL[$key]} == "${F_ORIG[$key]}" && $key != theme ]] && continue
     if ! td_config_set "$key" "${F_VAL[$key]}"; then
       F_ERR=$TD_LAST_ERROR F_ERR_FIELD=$key
