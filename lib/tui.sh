@@ -719,7 +719,7 @@ _tui_logo_png() {
 
 # _tui_logo_kitty FILE ROWS CACHE — prepare the kitty placeholder rendering.
 _tui_logo_kitty() {
-  local file=$1 rows=$2 png size w h cols data chunk r line cells
+  local file=$1 rows=$2 maxcols=${4:-0} png size w h cols data chunk r line cells
   png=$(_tui_logo_png "$file" "$3") || return 1
   size=$(_tui_png_size "$png") || return 1
   read -r w h <<<"$size"
@@ -728,6 +728,12 @@ _tui_logo_kitty() {
   cols=$(((rows * 2 * w + h / 2) / h))
   ((cols < 2)) && cols=2
   ((cols > rows * 4)) && cols=$((rows * 4))
+  # Cap the width to the room beside the title, shrinking rows to keep aspect.
+  if ((maxcols > 0 && cols > maxcols)); then
+    cols=$maxcols
+    rows=$(((cols * h + w) / (2 * w)))
+    ((rows < 1)) && rows=1
+  fi
   data=$(base64 -w0 -- "$png") || return 1
   TUI_LOGO_TX=""
   local first=1 more
@@ -759,11 +765,13 @@ _tui_logo_kitty() {
 
 # _tui_logo_blocks FILE ROWS CACHE — prepare the chafa rendering.
 _tui_logo_blocks() {
-  local file=$1 rows=$2 cache=$3 key colors=full line plain
+  local file=$1 rows=$2 cache=$3 maxcols=${4:-0} key colors=full line plain cw
   command -v chafa >/dev/null 2>&1 || return 1
   ((TD_TIER == 2)) && colors=256
   ((TD_TIER <= 1)) && colors=16
-  key=$(stat -c '%s-%Y' -- "$file" 2>/dev/null)-$rows-$colors-${TD_THEME[bg]#\#}
+  cw=$((rows * 2))
+  ((maxcols > 0 && cw > maxcols)) && cw=$maxcols
+  key=$(stat -c '%s-%Y' -- "$file" 2>/dev/null)-$rows-$cw-$colors-${TD_THEME[bg]#\#}
   key=$(printf '%s %s' "$file" "$key" | cksum)
   key=${key%% *}
   if [[ ! -f $cache/logo-$key.ans ]]; then
@@ -773,7 +781,7 @@ _tui_logo_blocks() {
     local -a guard=()
     command -v timeout >/dev/null 2>&1 && guard=(timeout 15)
     "${guard[@]}" chafa --probe=off --polite=on --format=symbols --colors="$colors" \
-      --size=$((rows * 2))x"$rows" --bg="${TD_THEME[bg]}" --animate=off -- "$file" \
+      --size="${cw}x${rows}" --bg="${TD_THEME[bg]}" --animate=off -- "$file" \
       >"$cache/logo-$key.ans" 2>/dev/null </dev/null || {
       rm -f -- "$cache/logo-$key.ans"
       return 1
@@ -793,19 +801,19 @@ _tui_logo_blocks() {
 
 # _tui_logo_prepare ROWS — fill TUI_LOGO_* for the configured logo.
 _tui_logo_prepare() {
-  local rows=$1 file cache=${XDG_CACHE_HOME:-$HOME/.cache}/todosh line
+  local rows=$1 maxcols=${2:-0} file cache=${XDG_CACHE_HOME:-$HOME/.cache}/todosh line
   TUI_LOGO_LINES=() TUI_LOGO_W=0 TUI_LOGO_TX=""
   [[ -n ${TD_CONF[logo]:-} ]] || return 0
   file=$(_tui_expand_path "${TD_CONF[logo]}")
   [[ -f $file && -r $file ]] || return 0
   case ${file,,} in
     *.png | *.jpg | *.jpeg | *.gif | *.webp | *.bmp)
-      if _tui_kitty_graphics && _tui_logo_kitty "$file" "$rows" "$cache"; then
+      if _tui_kitty_graphics && _tui_logo_kitty "$file" "$rows" "$cache" "$maxcols"; then
         TUI_LOGO_SENT=0
         return 0
       fi
       TUI_LOGO_TX=""
-      _tui_logo_blocks "$file" "$rows" "$cache" || TUI_LOGO_LINES=()
+      _tui_logo_blocks "$file" "$rows" "$cache" "$maxcols" || TUI_LOGO_LINES=()
       ;;
     *)
       mapfile -t -n "$rows" TUI_LOGO_LINES <"$file"
@@ -825,17 +833,22 @@ _tui_banner_build() {
   ((width >= 24)) || return 0
 
   local -a art=() logo=()
-  local line lw=0 aw=0 i n
-  _tui_logo_prepare 8
-  logo=("${TUI_LOGO_LINES[@]}")
-  lw=$TUI_LOGO_W
-  if ((lw > width / 3)); then
-    logo=() lw=0 TUI_LOGO_TX=""
-  fi
+  local line lw=0 aw=0 i n maxlogo
+  # Choose the title art first, for the full width, so the big art wins. The
+  # logo then takes only the columns left beside it (shrunk to fit), or is
+  # dropped when too few remain — the title never gets pushed down to small.
   # Margins: 2 on the left, 1 on the right, 2 between logo and title.
-  local room=$((width - 3 - (lw ? lw + 2 : 0)))
-  mapfile -t art < <(_tui_banner_art "$room")
+  mapfile -t art < <(_tui_banner_art "$((width - 3))")
   for line in "${art[@]}"; do ((${#line} > aw)) && aw=${#line}; done
+  maxlogo=$((width - 3 - aw - 2))
+  ((maxlogo < 6)) && maxlogo=0
+  if ((maxlogo > 0)); then
+    _tui_logo_prepare 8 "$maxlogo"
+    logo=("${TUI_LOGO_LINES[@]}")
+    lw=$TUI_LOGO_W
+  else
+    TUI_LOGO_TX=""
+  fi
   local tagline=${TD_CONF[tagline]:-}
   td_truncate tagline "$tagline" $((width - 4))
   ((${#art[@]} + ${#logo[@]})) || [[ -n $tagline ]] || return 0
