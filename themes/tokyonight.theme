@@ -1,4 +1,7 @@
 # Tokyo Night (night) — https://github.com/folke/tokyonight.nvim
+bg        = #1a1b26
+surface   = #16161e
+overlay   = #24283b
 fg        = #c0caf5
 muted     = #565f89
 accent    = #7aa2f7

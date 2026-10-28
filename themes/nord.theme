@@ -1,4 +1,7 @@
 # Nord — https://www.nordtheme.com
+bg        = #2e3440
+surface   = #272c36
+overlay   = #3b4252
 fg        = #d8dee9
 muted     = #616e88
 accent    = #88c0d0

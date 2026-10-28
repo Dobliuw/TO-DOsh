@@ -9,29 +9,23 @@ A fast, good-looking task manager for your terminal, written in pure Bash.
 
 ## The interface
 
-Run `todosh` (or `tdsh`) in a terminal:
+Run `todosh` (or `tdsh`) in a terminal. It is an application of its own, not a
+view of the CLI: no syntax to remember.
 
-```
-╭─ TODOSH ──────────────────────────────── ◉ #1 Review firewall rules · 25m ─╮
-│ View: active   Filter: —                                     ⚠ 1 overdue   │
-├────────────────────────────────────────┬───────────────────────────────────┤
-│  ▾ infra                          1/3  │ #1 Review firewall rules          │
-│❯ ◐ H #1 ◉ Review firewall rules 1/2 fri│ IN_PROGRESS · high · infra        │
-│    ✓ M #2 Export current rules         │ Due 2026-10-30 (fri)              │
-│    ○ M #3 Audit rules          1d late │ ◉ in focus for 25m                │
-├────────────────────────────────────────┴───────────────────────────────────┤
-│ n new  e edit  c comment  f focus  s start  d done  / filter  ? help       │
-╰────────────────────────────────────────────────────────────────────────────╯
-```
-
-`j`/`k` or arrows move, `n` adds (shorthand works: `p:infra pri:high due:fri`),
-`f` focuses, `s`/`b`/`d`/`x`/`r` change the status, `c` comments, `e` opens your
-editor, `:` runs any todosh command, `?` shows every key.
-
-Themes: `todosh theme list`, `todosh theme set nord`, or use your terminal's
-colors with `todosh theme import kitty`. The interface never paints the
-background, so transparency is kept. Over SSH or in a basic terminal it falls
-back to 256 or 16 colors and ASCII borders.
+- **Forms** to create and edit tasks (`n`, `N` for a subtask, `e`): type the
+  title, pick the project from a list (or create one), choose the priority with
+  ←/→, write a date in plain words (`fri`, `+3d`) with a live preview or pick a
+  preset, choose tags, the parent task, notes (opens your editor), and whether to
+  focus it right away. `Ctrl-S` saves, `Esc` cancels.
+- **Quick keys**: `Space` done/reopen, `s`/`b`/`x` start, block, cancel, `f` focus,
+  `c` comment, `p` priority, `m` move, `t` tags, `D` delete and `u` undo.
+- **Search everything**: `/` filters as you type, `:` opens a searchable list of
+  every action, `,` opens the settings (themes preview live), `?` the shortcuts.
+- **Looks**: solid background like nvim, view tabs, colored badges, progress bars,
+  subtask trees, an activity timeline and toast notifications. Themes: tokyonight,
+  catppuccin, gruvbox, nord, or your terminal's (`todosh theme import kitty`).
+  With `icons = nerd` (settings) it uses Nerd Font glyphs. Over SSH or in a basic
+  terminal it falls back to 256/16 colors and ASCII.
 
 ## Quick tour (CLI)
 

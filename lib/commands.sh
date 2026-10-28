@@ -1545,8 +1545,9 @@ td_cmd_theme() {
       printf 'Theme %s (color tier %s)\n' "$name" "$TD_TIER"
       local key
       for key in "${TD_THEME_KEYS[@]}"; do
-        if [[ $key == selection ]]; then
-          printf '  %-10s %s  %s sample %s\n' "$key" "${TD_THEME[$key]}" "${TD_TC[sel]}${TD_TC[fg]}" "${TD_TC[reset]}"
+        if [[ " ${TD_THEME_BG_KEYS[*]} " == *" $key "* ]]; then
+          printf '  %-10s %s  %s  sample text  %s\n' "$key" "${TD_THEME[$key]}" \
+            "${TD_TB[$key]}${TD_TC[fg]}" "${TD_TC[reset]}"
         else
           printf '  %-10s %s  %s███ sample%s\n' "$key" "${TD_THEME[$key]}" "${TD_TC[$key]}" "${TD_TC[reset]}"
         fi

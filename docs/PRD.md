@@ -146,3 +146,12 @@ translations.
   closing a task with open subtasks asks before closing them too; views cycle
   active/all/overdue/blocked; projects are collapsible groups. Built-in themes:
   tokyonight, catppuccin (mocha), gruvbox (dark), nord; `theme import kitty`.
+- 2026-10-28 — TUI redesign (user feedback: "a copy of the CLI, without soul"):
+  the TUI is an application of its own. Forms and pickers replace command
+  syntax (new/edit task, priority, project, tags, parent, dates with presets and
+  live preview); searchable action palette; settings screen with live theme
+  preview; confirm dialogs; toasts; dimmed background behind dialogs; solid
+  theme background (new theme keys: bg, surface, overlay) instead of terminal
+  transparency; view tabs, badges, progress bars, subtask trees, activity
+  timeline; Nerd Font icon set (`icons = nerd`). Ctrl-C/Ctrl-Z are keys
+  (terminal in -isig mode). The CLI is unchanged.

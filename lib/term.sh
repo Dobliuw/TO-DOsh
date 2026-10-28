@@ -43,11 +43,28 @@ td_term_init() {
   if ((TD_UNICODE)); then
     TD_SYM=([TODO]="○" [IN_PROGRESS]="◐" [BLOCKED]="⊘" [DONE]="✓" [CANCELLED]="✗"
       [arrow]="→" [ellipsis]="…" [comment]="»" [event]="·" [child]="↳" [dash]="—"
-      [focus]="◉" [warn]="⚠" [time]="⏱" [select]="❯")
+      [focus]="◉" [warn]="⚠" [time]="⏱" [select]="❯"
+      [ok]="✓" [error]="✗" [info]="●" [search]="/" [bar]="▌" [checked]="☑" [unchecked]="☐"
+      [down]="▾" [right]="▸" [tree_mid]="├" [tree_end]="└" [project]="▸" [tag]="#"
+      [due]="◷" [note]="✎" [prio_urgent]="‼" [prio_high]="▲" [prio_low]="▽" [app]="◆"
+      [dot]="●")
+    # Nerd Font glyphs (Font Awesome range), when the user enables them.
+    if [[ ${TD_CONF[icons]:-auto} == nerd ]]; then
+      TD_SYM+=([TODO]=$'\uf10c' [IN_PROGRESS]=$'\uf192' [BLOCKED]=$'\uf05e'
+        [DONE]=$'\uf058' [CANCELLED]=$'\uf057' [focus]=$'\uf140' [warn]=$'\uf071'
+        [time]=$'\uf017' [comment]=$'\uf075' [project]=$'\uf07b' [tag]=$'\uf02b'
+        [due]=$'\uf073' [note]=$'\uf040' [search]=$'\uf002' [ok]=$'\uf00c'
+        [error]=$'\uf00d' [info]=$'\uf05a' [checked]=$'\uf14a' [unchecked]=$'\uf096'
+        [prio_urgent]=$'\uf06d' [prio_high]=$'\uf062' [prio_low]=$'\uf063' [app]=$'\uf0ae')
+    fi
   else
     TD_SYM=([TODO]="[ ]" [IN_PROGRESS]="[~]" [BLOCKED]="[!]" [DONE]="[x]" [CANCELLED]="[-]"
       [arrow]="->" [ellipsis]="~" [comment]=">" [event]="*" [child]="\\" [dash]="-"
-      [focus]="@" [warn]="!" [time]="~" [select]=">")
+      [focus]="@" [warn]="!" [time]="~" [select]=">"
+      [ok]="+" [error]="x" [info]="*" [search]="/" [bar]=">" [checked]="[x]" [unchecked]="[ ]"
+      [down]="v" [right]=">" [tree_mid]="|" [tree_end]="\`" [project]=">" [tag]="#"
+      [due]="@" [note]="~" [prio_urgent]="!!" [prio_high]="!" [prio_low]="." [app]="*"
+      [dot]="*")
   fi
 }
 

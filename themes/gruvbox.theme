@@ -1,4 +1,7 @@
 # Gruvbox dark — https://github.com/morhetz/gruvbox
+bg        = #282828
+surface   = #1d2021
+overlay   = #3c3836
 fg        = #ebdbb2
 muted     = #928374
 accent    = #83a598

@@ -15,7 +15,8 @@
 | `lib/dates.sh` | Due-date parsing, durations, jq helpers for relative dates |
 | `lib/focus.sh` | The focused task and its work sessions |
 | `lib/theme.sh` | Themes, terminal color tiers, kitty import |
-| `lib/tui.sh` | The full-screen interface |
+| `lib/tui_ui.sh` | TUI building blocks: line composition, layers, keys, text editing, dialogs, pickers, forms |
+| `lib/tui.sh` | The interface: screen, details, actions, task form, palette, settings |
 | `themes/` | Built-in themes (`key = #rrggbb`) |
 | `tests/` | bats test suites; `test_helper.bash` isolates each test |
 
@@ -68,6 +69,12 @@ Tooling on Arch: `sudo pacman -S bash-bats shellcheck shfmt`.
 Each test runs with a private `HOME` whose path contains a space; nothing touches
 your real data. `tests/tui.bats` renders frames without a terminal (`_tui_frame`
 is pure) and drives the real interface through `script(1)` for a smoke test.
+
+Dialogs and forms never read the terminal themselves (only `_tui_read_key`
+does), so `tests/tui.bats` drives them with synthetic keys. The library does
+not run under `errexit`, but tests do: call handlers that return non-zero on
+purpose in a conditional (`fn || rc=$?`). Quote associative-array keys with
+dashes or symbols (`["ctrl-d"]`): shfmt rewrites `[ctrl-d]` as arithmetic.
 
 TUI performance rule: nothing that runs per key press may fork. Use lookup
 tables, `printf -v` and the `-v` form of helpers (`td_fmt_duration -v`); jq runs

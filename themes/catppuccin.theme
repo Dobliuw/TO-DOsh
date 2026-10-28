@@ -1,4 +1,7 @@
 # Catppuccin Mocha — https://github.com/catppuccin/catppuccin
+bg        = #1e1e2e
+surface   = #181825
+overlay   = #313244
 fg        = #cdd6f4
 muted     = #6c7086
 accent    = #89b4fa
