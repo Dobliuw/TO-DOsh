@@ -42,10 +42,12 @@ td_term_init() {
 
   if ((TD_UNICODE)); then
     TD_SYM=([TODO]="○" [IN_PROGRESS]="◐" [BLOCKED]="⊘" [DONE]="✓" [CANCELLED]="✗"
-      [arrow]="→" [ellipsis]="…" [comment]="»" [event]="·" [child]="↳" [dash]="—")
+      [arrow]="→" [ellipsis]="…" [comment]="»" [event]="·" [child]="↳" [dash]="—"
+      [focus]="◉" [warn]="⚠" [time]="⏱")
   else
     TD_SYM=([TODO]="[ ]" [IN_PROGRESS]="[~]" [BLOCKED]="[!]" [DONE]="[x]" [CANCELLED]="[-]"
-      [arrow]="->" [ellipsis]="~" [comment]=">" [event]="*" [child]="\\" [dash]="-")
+      [arrow]="->" [ellipsis]="~" [comment]=">" [event]="*" [child]="\\" [dash]="-"
+      [focus]="@" [warn]="!" [time]="~")
   fi
 }
 
@@ -82,11 +84,11 @@ td_term_cols() {
 # td_truncate VAR TEXT WIDTH — store TEXT cut to WIDTH characters in VAR.
 td_truncate() {
   local -n _td_t=$1
-  local text=$2 width=$3
-  if ((width > 0 && ${#text} > width)); then
-    _td_t=${text:0:width-1}${TD_SYM[ellipsis]}
+  local _td_text=$2 _td_width=$3
+  if ((_td_width > 0 && ${#_td_text} > _td_width)); then
+    _td_t=${_td_text:0:_td_width-1}${TD_SYM[ellipsis]}
   else
-    _td_t=$text
+    _td_t=$_td_text
   fi
 }
 
@@ -119,8 +121,8 @@ td_confirm() {
 # The value is split on whitespace (never eval'ed): `nvim -p` works, quoting does not.
 td_editor_cmd() {
   local -n _td_cmd=$1
-  local editor=${TD_CONF[editor]:-${VISUAL:-${EDITOR:-vi}}}
-  read -ra _td_cmd <<<"$editor"
+  local _td_editor=${TD_CONF[editor]:-${VISUAL:-${EDITOR:-vi}}}
+  read -ra _td_cmd <<<"$_td_editor"
   ((${#_td_cmd[@]})) || _td_cmd=(vi)
 }
 

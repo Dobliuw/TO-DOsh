@@ -271,19 +271,19 @@ td_tasks_load() {
 # td_next_id VAR — allocate a new task ID into VAR (requires the lock).
 td_next_id() {
   local -n _td_id=$1
-  local meta=$TD_DATA_DIR/meta.json next
+  local _td_meta=$TD_DATA_DIR/meta.json _td_next
   if ((TD_LOCK_DEPTH == 0)); then
     td_err "internal error: ID allocation without lock"
     return "$TD_E_ERR"
   fi
-  if ! next=$(jq -er '.next_id' "$meta" 2>/dev/null) || ! td_valid_id "$next"; then
-    td_err "corrupted metadata (next_id): $meta"
+  if ! _td_next=$(jq -er '.next_id' "$_td_meta" 2>/dev/null) || ! td_valid_id "$_td_next"; then
+    td_err "corrupted metadata (next_id): $_td_meta"
     return "$TD_E_ERR"
   fi
   # Never reuse an ID that is still on disk (e.g. after restoring a backup).
-  while [[ -e $TD_DATA_DIR/tasks/$next.json || -e $TD_DATA_DIR/trash/$next.json ]]; do
-    next=$((next + 1))
+  while [[ -e $TD_DATA_DIR/tasks/$_td_next.json || -e $TD_DATA_DIR/trash/$_td_next.json ]]; do
+    _td_next=$((_td_next + 1))
   done
-  td_write_json "$meta" "$(jq --argjson n $((next + 1)) '.next_id = $n' "$meta")" || return
-  _td_id=$next
+  td_write_json "$_td_meta" "$(jq --argjson n $((_td_next + 1)) '.next_id = $n' "$_td_meta")" || return
+  _td_id=$_td_next
 }

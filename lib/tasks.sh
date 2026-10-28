@@ -58,6 +58,13 @@ _td_validate_text() {
   fi
 }
 
+_td_validate_due() {
+  if [[ -n $1 ]] && ! td_due_valid "$1"; then
+    td_err "invalid due date: '$1' (expected YYYY-MM-DD)"
+    return "$TD_E_USAGE"
+  fi
+}
+
 _td_validate_title() {
   if ! td_valid_title "$1"; then
     td_err "invalid title: must be one line of 1-200 characters"
@@ -121,12 +128,12 @@ _td_child_ids() {
 
 # --- create ----------------------------------------------------------------
 
-# td_task_add TITLE PROJECT PRIORITY PARENT DESCRIPTION [TAG...]
-# PARENT may be empty. An empty PROJECT means the parent's project, or the
+# td_task_add TITLE PROJECT PRIORITY PARENT DESCRIPTION DUE [TAG...]
+# PARENT and DUE (YYYY-MM-DD, see td_due_parse) may be empty. An empty PROJECT means the parent's project, or the
 # configured default_project for top-level tasks. TD_RESULT: the new task ID.
 td_task_add() {
-  local title=$1 project=$2 priority=$3 parent=$4 description=$5
-  shift 5
+  local title=$1 project=$2 priority=$3 parent=$4 description=$5 due=$6
+  shift 6
   TD_RESULT=""
   _td_validate_title "$title" || return
   [[ -n $project ]] && { _td_validate_names project "$project" || return; }
@@ -139,12 +146,13 @@ td_task_add() {
     _td_validate_ids "$parent" || return
   fi
   _td_validate_text description "$description" || return
-  td_with_lock _td_task_add_locked "$title" "$project" "$priority" "$parent" "$description" "$@"
+  _td_validate_due "$due" || return
+  td_with_lock _td_task_add_locked "$title" "$project" "$priority" "$parent" "$description" "$due" "$@"
 }
 
 _td_task_add_locked() {
-  local title=$1 project=$2 priority=$3 parent=$4 description=$5 id now record
-  shift 5
+  local title=$1 project=$2 priority=$3 parent=$4 description=$5 due=$6 id now record
+  shift 6
   if [[ -n $parent ]]; then
     _td_check_parent "$parent" || return
     [[ -n $project ]] || project=$(jq -r .project "$TD_DATA_DIR/tasks/$parent.json") || return
@@ -154,12 +162,12 @@ _td_task_add_locked() {
   td_now_utc now
   record=$(jq -cn --argjson id "$id" --arg title "$title" --arg project "$project" \
     --arg priority "$priority" --arg parent "$parent" --arg description "$description" \
-    --arg now "$now" '{
+    --arg due "$due" --arg now "$now" '{
       id: $id, title: $title, description: $description,
       status: "TODO", priority: $priority, project: $project,
       tags: ($ARGS.positional | unique),
       parent: (if $parent == "" then null else ($parent | tonumber) end),
-      due: null, created: $now, updated: $now, closed: null,
+      due: (if $due == "" then null else $due end), created: $now, updated: $now, closed: null,
       history: [{type: "event", at: $now, event: "created"}]
     }' --args "$@") || return
   td_task_write "$id" "$record" || return
@@ -170,54 +178,59 @@ _td_task_add_locked() {
 
 # td_task_edit ID CHANGES — CHANGES names an associative array with any of:
 #   title, description, priority, project, parent (an ID or "none"),
+#   due (YYYY-MM-DD, or "" to clear),
 #   tags_add, tags_remove (space-separated names),
 #   if_title, if_description (only apply if the current value still matches:
 #   protects edits made in an external editor against concurrent changes).
 # TD_RESULT: 1 if the task changed, 0 if there was nothing to change.
 td_task_edit() {
-  local id=$1
+  # Locals are prefixed so they cannot shadow the caller's array name.
+  local _td_tid=$1 _td_key _td_json
   local -n _td_ch=$2
-  local key
-  local -a tags_add=() tags_remove=() pairs=()
+  local -a _td_add=() _td_rm=() _td_pairs=()
   TD_RESULT=""
-  _td_validate_ids "$id" || return
-  for key in "${!_td_ch[@]}"; do
-    case $key in
-      title) _td_validate_title "${_td_ch[$key]}" || return ;;
-      description) _td_validate_text description "${_td_ch[$key]}" || return ;;
+  _td_validate_ids "$_td_tid" || return
+  for _td_key in "${!_td_ch[@]}"; do
+    case $_td_key in
+      title) _td_validate_title "${_td_ch[title]}" || return ;;
+      description) _td_validate_text description "${_td_ch[description]}" || return ;;
       priority)
-        td_valid_priority "${_td_ch[$key]}" || {
-          td_err "invalid priority: '${_td_ch[$key]}' (urgent, high, med, low)"
+        td_valid_priority "${_td_ch[priority]}" || {
+          td_err "invalid priority: '${_td_ch[priority]}' (urgent, high, med, low)"
           return "$TD_E_USAGE"
         }
         ;;
-      project) _td_validate_names project "${_td_ch[$key]}" || return ;;
+      project) _td_validate_names project "${_td_ch[project]}" || return ;;
+      due) _td_validate_due "${_td_ch[due]}" || return ;;
       parent)
-        [[ ${_td_ch[$key]} == none ]] || _td_validate_ids "${_td_ch[$key]}" || return
+        [[ ${_td_ch[parent]} == none ]] || _td_validate_ids "${_td_ch[parent]}" || return
         ;;
-      tags_add | tags_remove)
-        local -n _td_list=$key
-        read -ra _td_list <<<"${_td_ch[$key]}"
-        unset -n _td_list
-        _td_validate_names tag "${tags_add[@]}" "${tags_remove[@]}" || return
+      tags_add)
+        read -ra _td_add <<<"${_td_ch[tags_add]}"
+        _td_validate_names tag "${_td_add[@]}" || return
+        continue
+        ;;
+      tags_remove)
+        read -ra _td_rm <<<"${_td_ch[tags_remove]}"
+        _td_validate_names tag "${_td_rm[@]}" || return
         continue
         ;;
       if_title | if_description) ;;
       *)
-        td_err "internal error: unknown edit field: $key"
+        td_err "internal error: unknown edit field: $_td_key"
         return "$TD_E_ERR"
         ;;
     esac
-    pairs+=(--arg "$key" "${_td_ch[$key]}")
+    _td_pairs+=(--arg "$_td_key" "${_td_ch[$_td_key]}")
   done
-  local changes
-  changes=$(jq -cn '$ARGS.named
-    | if has("parent") then .parent |= (if . == "none" then null else tonumber end) else . end' \
-    "${pairs[@]}") || return
-  changes=$(jq -c --argjson add "$(jq -cn '$ARGS.positional' --args "${tags_add[@]}")" \
-    --argjson rm "$(jq -cn '$ARGS.positional' --args "${tags_remove[@]}")" \
-    '. + {tags_add: $add, tags_remove: $rm}' <<<"$changes") || return
-  td_with_lock _td_task_edit_locked "$id" "$changes"
+  _td_json=$(jq -cn '$ARGS.named
+    | if has("parent") then .parent |= (if . == "none" then null else tonumber end) else . end
+    | if has("due") then .due |= (if . == "" then null else . end) else . end' \
+    "${_td_pairs[@]}") || return
+  _td_json=$(jq -c --argjson add "$(jq -cn '$ARGS.positional' --args "${_td_add[@]}")" \
+    --argjson rm "$(jq -cn '$ARGS.positional' --args "${_td_rm[@]}")" \
+    '. + {tags_add: $add, tags_remove: $rm}' <<<"$_td_json") || return
+  td_with_lock _td_task_edit_locked "$_td_tid" "$_td_json"
 }
 
 _td_task_edit_locked() {
@@ -250,7 +263,7 @@ _td_task_edit_locked() {
   new=$(jq -c --argjson ch "$changes" --arg now "$now" '
     (.history | length) as $before
     | reduce ($ch | to_entries[]
-        | select(.key | IN("title", "description", "priority", "project", "parent"))) as $e (.;
+        | select(.key | IN("title", "description", "priority", "project", "parent", "due"))) as $e (.;
         if .[$e.key] == $e.value then .
         else .history += [{type: "event", at: $now, event: "edit", field: $e.key}
                + (if $e.key == "description" then {} else {from: .[$e.key], to: $e.value} end)]
@@ -352,10 +365,15 @@ _td_task_status_locked() {
   done
   unset -f _plan
 
-  local i now record new
+  local i now record new focused since
+  td_focus_read focused since
   td_now_utc now
   for i in "${!plan[@]}"; do
     id=${plan[i]}
+    # Closing the focused task ends its session and releases the focus.
+    if [[ $id == "$focused" ]] && td_status_is_closed "${plan_status[i]}"; then
+      _td_focus_end || return
+    fi
     record=$(td_task_read "$id") || return
     local msg=""
     ((plan_msg[i])) && msg=$message
@@ -440,8 +458,11 @@ _td_task_delete_locked() {
     done
   done
 
+  local focused since
+  td_focus_read focused since
   td_now_utc now
   for id in "${plan[@]}"; do
+    [[ $id == "$focused" ]] && { _td_focus_end || return; }
     record=$(td_task_read "$id") || return
     new=$(jq -c --arg now "$now" \
       '.history += [{type: "event", at: $now, event: "deleted"}] | .updated = $now' \
@@ -561,21 +582,23 @@ _td_task_purge_locked() {
 # --- queries ---------------------------------------------------------------
 
 # td_tasks_select FILTER_JSON [AREA] — print matching tasks, without history,
-# in display order: open before closed, then priority, then ID; subtasks right
-# after their parent when both match. Each task with subtasks gains
+# in display order: open before closed, then status, priority, due date and
+# ID; subtasks right after their parent when both match. Each task with subtasks gains
 # "subtasks": {"done": N, "total": M} (cancelled subtasks are not counted).
 #
 # FILTER_JSON keys (all optional):
 #   statuses, priorities, projects: arrays (match any); tags: array (match all)
 #   parent: ID (only its subtasks); text: case-insensitive substring of title
+#   overdue: true (only open tasks due before today)
 #   visibility: "default" (open + closed within archive_days), "open", "all"
 #   archive_days: number (0 = never hide closed tasks)
 # An explicit "statuses" filter overrides visibility.
 td_tasks_select() {
-  local filter=$1 area=${2:-tasks} all now
+  local filter=$1 area=${2:-tasks} all now today
   all=$(td_tasks_load "$area") || return
   now=$(date +%s)
-  jq -c --argjson f "$filter" --argjson now "$now" '
+  td_today today
+  jq -c --argjson f "$filter" --argjson now "$now" --arg today "$today" '
     def srank: {"IN_PROGRESS": 0, "BLOCKED": 1, "TODO": 2, "DONE": 3, "CANCELLED": 4}[.status] // 5;
     def prank: {"urgent": 0, "high": 1, "med": 2, "low": 3}[.priority] // 4;
     def closed: .status == "DONE" or .status == "CANCELLED";
@@ -593,7 +616,8 @@ td_tasks_select() {
       and (($f.tags // []) as $t | $t - .tags == [])
       and ($f.parent == null or .parent == $f.parent)
       and (($f.text // "") as $q | $q == ""
-           or (.title | ascii_downcase | contains($q | ascii_downcase)));
+           or (.title | ascii_downcase | contains($q | ascii_downcase)))
+      and ($f.overdue != true or ((closed | not) and .due != null and .due < $today));
 
     . as $all
     | (reduce ($all[] | select(.parent != null)) as $c ({};
@@ -604,8 +628,8 @@ td_tasks_select() {
        | if $progress[.id | tostring] then .subtasks = $progress[.id | tostring] else . end] as $hits
     | ($hits | map(.id)) as $ids
     | ($hits | map(select(.parent == null or (.parent | IN($ids[]) | not)))
-             | sort_by([(closed | if . then 1 else 0 end), srank, prank, .id])) as $top
+             | sort_by([(closed | if . then 1 else 0 end), srank, prank, (.due // "~"), .id])) as $top
     | [$top[] as $t
        | $t,
-         ($hits | map(select(.parent == $t.id)) | sort_by([srank, .id]) | .[])]' <<<"$all"
+         ($hits | map(select(.parent == $t.id)) | sort_by([srank, (.due // "~"), .id]) | .[])]' <<<"$all"
 }

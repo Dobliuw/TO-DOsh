@@ -43,7 +43,7 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   [[ $output == *"needs a value"* ]]
   run todosh add x --bogus
   [ "$status" -eq 2 ]
-  run todosh add x due:friday
+  run todosh add x due:someday
   [ "$status" -eq 2 ]
   run todosh add x pri:huge
   [ "$status" -eq 2 ]
@@ -253,4 +253,77 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   [[ $output == *"Trash:"* ]]
   run todosh "done" --help
   [[ $output == "Usage: todosh done"* ]]
+}
+
+@test "due dates through the CLI" {
+  todosh add Report due:tomorrow >/dev/null
+  [ "$(task 1 .due)" = "$(date -d tomorrow +%F)" ]
+  run todosh list
+  [[ $output == *"#1 Report  tomorrow"* ]]
+  todosh edit 1 --due 2020-01-01 >/dev/null
+  run todosh list --overdue
+  [[ $output == *"d late"* ]]
+  todosh edit 1 due:none >/dev/null
+  [ "$(task 1 .due)" = null ]
+  run todosh add x --due someday
+  [ "$status" -eq 2 ]
+  run todosh list due:today
+  [ "$status" -eq 2 ]
+}
+
+@test "focus, memory card, prompt and unfocus" {
+  todosh add Parent --description "Context line" >/dev/null
+  todosh add Child ^1 >/dev/null
+  todosh comment 1 "Latest finding" >/dev/null
+  run todosh focus
+  [ "$output" = "No task in focus. Pick one with: todosh focus <id>" ]
+  run todosh prompt
+  [ -z "$output" ]
+  run todosh focus 1
+  [ "$status" -eq 0 ]
+  [[ ${lines[0]} == "╭─ ◉ FOCUS #1 Parent"*"IN_PROGRESS · med ─╮" ]]
+  [[ $output == *"Context line"* ]]
+  [[ $output == *"Subtasks 0/1"* ]]
+  [[ $output == *"○ #2 Child"* ]]
+  [[ $output == *"» just now  Latest finding"* ]]
+  run todosh prompt
+  [ "$output" = "◉ #1 Parent" ]
+  run todosh prompt --no-icon --max 3 --time
+  [[ $output == "#1 Pa… · "*s ]]
+  run todosh list
+  [[ ${lines[0]} == *"#1 ◉ Parent"* ]]
+  run todosh focus 1
+  [ "${lines[0]}" = "#1 is already in focus." ]
+  run todosh unfocus
+  [[ $output == "Released focus on #1 Parent (session: "*")" ]]
+  run todosh unfocus
+  [ "$output" = "No task was in focus." ]
+}
+
+@test "focus JSON contract" {
+  run --separate-stderr todosh focus --json
+  [ "$output" = '{
+  "focus": null
+}' ]
+  todosh add T >/dev/null
+  todosh comment 1 c1 >/dev/null
+  run --separate-stderr todosh focus 1 --json
+  jq -e '.focus.task.id == 1 and (.focus.task | has("history") | not)
+         and .focus.session_seconds >= 0 and (.focus.recent_comments | length) == 1
+         and .focus.parent == null' <<<"$output"
+  run --separate-stderr todosh prompt --json
+  jq -e '.task == 1 and .title == "T"' <<<"$output"
+}
+
+@test "prompt never fails and never creates the data directory" {
+  run todosh prompt
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -e "$HOME/.local/share/todosh" ]
+}
+
+@test "the memory card falls back to ASCII" {
+  todosh add T >/dev/null
+  LC_ALL=C LANG=C run todosh focus 1
+  [[ ${lines[0]} == "+- @ FOCUS #1 T"*"IN_PROGRESS · med -+" ]]
 }

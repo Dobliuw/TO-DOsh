@@ -8,7 +8,7 @@
 declare -ga TD_CMD_ORDER=()
 declare -gA TD_CMD_SUMMARY=() TD_CMD_GROUP=()
 # Order of the groups in `todosh help`.
-readonly TD_CMD_GROUPS=(Tasks Status History Trash General)
+readonly TD_CMD_GROUPS=(Tasks Status Focus History Trash General)
 
 # Global output options, set by td_main. These globals are read by other
 # modules (SC2034 is disabled for this file because of that).

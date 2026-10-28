@@ -13,14 +13,14 @@ setup() {
 
 # add TITLE [PARENT] [PROJECT] — create a task and print its ID.
 add() {
-  td_task_add "$1" "${3:-}" med "${2:-}" "" >/dev/null || return
+  td_task_add "$1" "${3:-}" med "${2:-}" "" "" >/dev/null || return
   printf '%s\n' "$TD_RESULT"
 }
 
 field() { jq -r "$2" "$TD_DATA_DIR/${3:-tasks}/$1.json"; }
 
 @test "add stores a complete record with a creation event" {
-  td_task_add "Review firewall rules" infra high "" "Check fw01" network audit network
+  td_task_add "Review firewall rules" infra high "" "Check fw01" "" network audit network
   [ "$TD_RESULT" = 1 ]
   run jq -c '[.id, .title, .description, .status, .priority, .project, .tags, .parent,
               .due, .closed, (.created == .updated), (.history | map(.event))]' \
@@ -32,25 +32,25 @@ field() { jq -r "$2" "$TD_DATA_DIR/${3:-tasks}/$1.json"; }
   # shellcheck disable=SC2016 # literal on purpose: must never expand
   local title='Quotes "x" '\''y'\'' $(rm -rf /) `id` ; & | > ñ 日本 ✓'
   local desc=$'Line 1\n\n  indented $HOME\n\ttab'
-  td_task_add "$title" inbox med "" "$desc"
+  td_task_add "$title" inbox med "" "$desc" ""
   [ "$(field 1 .title)" = "$title" ]
   [ "$(field 1 .description)" = "$desc" ]
 }
 
 @test "add validates its input" {
-  run td_task_add "" inbox med "" ""
+  run td_task_add "" inbox med "" "" ""
   [ "$status" -eq 2 ]
-  run td_task_add $'two\nlines' inbox med "" ""
+  run td_task_add $'two\nlines' inbox med "" "" ""
   [ "$status" -eq 2 ]
-  run td_task_add ok "bad project" med "" ""
+  run td_task_add ok "bad project" med "" "" ""
   [ "$status" -eq 2 ]
-  run td_task_add ok inbox highest "" ""
+  run td_task_add ok inbox highest "" "" ""
   [ "$status" -eq 2 ]
-  run td_task_add ok inbox med "" "" "bad/tag"
+  run td_task_add ok inbox med "" "" "" "bad/tag"
   [ "$status" -eq 2 ]
-  run td_task_add ok inbox med "abc" ""
+  run td_task_add ok inbox med "abc" "" ""
   [ "$status" -eq 2 ]
-  run td_task_add ok inbox med "" $'esc\033'
+  run td_task_add ok inbox med "" $'esc\033' ""
   [ "$status" -eq 2 ]
   [ -z "$(td_task_ids)" ]
 }
@@ -72,19 +72,19 @@ field() { jq -r "$2" "$TD_DATA_DIR/${3:-tasks}/$1.json"; }
   add Parent >/dev/null
   add Child 1 >/dev/null
   [ "$(field 2 .parent)" = 1 ]
-  run td_task_add x "" med 99 ""
+  run td_task_add x "" med 99 "" ""
   [ "$status" -eq 3 ]
-  run td_task_add x "" med 2 ""
+  run td_task_add x "" med 2 "" ""
   [ "$status" -eq 4 ]
   [[ $output == *"cannot be nested"* ]]
   td_task_set_status DONE 1 "" 1
-  run td_task_add x "" med 1 ""
+  run td_task_add x "" med 1 "" ""
   [ "$status" -eq 4 ]
   [[ $output == *"reopen it"* ]]
 }
 
 @test "edit applies changes and records one event per field" {
-  td_task_add Title inbox med "" "" a b
+  td_task_add Title inbox med "" "" "" a b
   local -A ch=([title]="New title" [priority]=urgent [project]=infra [tags_add]="c" [tags_remove]="a"
     [description]="Body")
   td_task_edit 1 ch
@@ -99,7 +99,7 @@ field() { jq -r "$2" "$TD_DATA_DIR/${3:-tasks}/$1.json"; }
 }
 
 @test "edit without effective changes leaves the file untouched" {
-  td_task_add Same inbox med "" "" a
+  td_task_add Same inbox med "" "" "" a
   local before
   before=$(cat "$TD_DATA_DIR/tasks/1.json")
   local -A ch=([title]=Same [tags_add]=a [priority]=med)
@@ -322,10 +322,10 @@ field() { jq -r "$2" "$TD_DATA_DIR/${3:-tasks}/$1.json"; }
 }
 
 @test "select filters: statuses, projects, all tags, parent, text" {
-  td_task_add "Fix DNS" infra high "" "" net dns
-  td_task_add "Fix VPN" infra low "" "" net
-  td_task_add "Write docs" docs med "" ""
-  td_task_add "Sub" "" med 1 ""
+  td_task_add "Fix DNS" infra high "" "" "" net dns
+  td_task_add "Fix VPN" infra low "" "" "" net
+  td_task_add "Write docs" docs med "" "" ""
+  td_task_add "Sub" "" med 1 "" ""
   td_task_set_status BLOCKED 0 "" 2
   [ "$(td_tasks_select '{"statuses": ["BLOCKED"]}' | jq -c 'map(.id)')" = "[2]" ]
   [ "$(td_tasks_select '{"projects": ["docs"]}' | jq -c 'map(.id)')" = "[3]" ]
