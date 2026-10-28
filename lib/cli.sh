@@ -152,9 +152,21 @@ td_help_config() {
     "  path   Print the config file path" \
     "" \
     "The config file holds 'key = value' lines; '#' starts a comment line." \
+    "" \
+    "Settings:" \
+    "  theme               Color theme name (default: tokyonight)" \
+    "  color               auto | always | never (default: auto)" \
+    "  icons               auto | nerd | unicode | ascii (default: auto)" \
+    "  default_project     Project for tasks added without one (default: inbox)" \
+    "  archive_after_days  Days after which DONE/CANCELLED tasks leave the main" \
+    "                      view; they stay searchable and restorable. 0 = never" \
+    "                      (default: 7)" \
+    "  editor              Command to edit descriptions (default: \$VISUAL," \
+    "                      then \$EDITOR, then vi)" \
+    "" \
     "Example:" \
     "  theme = tokyonight" \
-    "  archive_after_days = 7"
+    "  archive_after_days = 14"
 }
 
 td_cmd_config() {
