@@ -360,7 +360,7 @@ _td_collect_filters() {
   fi
 }
 
-# _td_render_list JSON — print a task table for a terminal or a pipe.
+# _td_render_list JSON — print tasks as a project-grouped tree.
 _td_render_list() {
   local -a r_depth=() r_id=() r_status=() r_prio=() r_project=() r_tags=() r_progress=()
   local -a r_title=() r_due=() r_due_state=() r_focus=()
@@ -379,7 +379,7 @@ _td_render_list() {
        (if .subtasks then "\(.subtasks.done)/\(.subtasks.total)" else "" end),
        ($due.text // ""), ($due.state // ""), (if (.id | tostring) == $focus then 1 else 0 end),
        (.title | gsub("[[:cntrl:]]"; " "))]
-    | map(tostring) | join("\u001f")' <<<"$1")
+    | map(tostring) | join("")' <<<"$1")
 
   local n=${#r_id[@]}
   if ((n == 0)); then
@@ -387,59 +387,158 @@ _td_render_list() {
     return 0
   fi
 
-  # Column widths. Text is padded by character count (${#}), not bytes, so
-  # accented letters align; double-width glyphs may still shift a little.
-  local idw=1 titlew=0 projw=0 tagw=0 duew=0 cols len
-  local focus_mark="${TD_SYM[focus]} "
-  for ((i = 0; i < n; i++)); do
-    ((${#r_id[i]} > idw)) && idw=${#r_id[i]}
-    len=$((${#r_title[i]} + 2 * r_depth[i] + r_focus[i] * ${#focus_mark}))
-    ((len > titlew)) && titlew=$len
-    ((${#r_project[i]} > projw)) && projw=${#r_project[i]}
-    ((${#r_tags[i]} > tagw)) && tagw=${#r_tags[i]}
-    ((${#r_due[i]} > duew)) && duew=${#r_due[i]}
-  done
-  cols=$(td_term_cols)
-  if ((cols > 0)); then
-    local fixed=$((${#TD_SYM[TODO]} + 3 + idw + 4 + duew + 2 + projw + 2 + tagw + 6))
-    local avail=$((cols - fixed))
-    ((avail < 16)) && avail=16
-    ((titlew > avail)) && titlew=$avail
+  # ── group by project ───────────────────────────────────────────────────────
+  # Re-order so all tasks from the same project are adjacent (stable, by name),
+  # keeping each depth-0 task with its depth-1 children.
+  if ((n > 1)); then
+    local -a _gs=() _gp=()
+    for ((i = 0; i < n; i++)); do
+      ((r_depth[i] == 0)) && _gs+=("$i") && _gp+=("${r_project[i]}")
+    done
+    local _ng=${#_gs[@]} _gi _gj _ts _tp
+    for ((_gi = 1; _gi < _ng; _gi++)); do
+      _gj=$_gi
+      while ((_gj > 0)) && [[ "${_gp[_gj-1]}" > "${_gp[_gj]}" ]]; do
+        _ts=${_gs[_gj-1]}; _gs[_gj-1]=${_gs[_gj]}; _gs[_gj]=$_ts
+        _tp=${_gp[_gj-1]}; _gp[_gj-1]=${_gp[_gj]}; _gp[_gj]=$_tp
+        ((_gj--))
+      done
+    done
+    local -a _nd=() _ni=() _ns=() _nq=() _nproj=() _ntg=() _npg=()
+    local -a _ntitle=() _ndu=() _nds=() _nfo=()
+    for ((_gi = 0; _gi < _ng; _gi++)); do
+      _ts=${_gs[_gi]}
+      _nd+=("${r_depth[_ts]}") _ni+=("${r_id[_ts]}") _ns+=("${r_status[_ts]}")
+      _nq+=("${r_prio[_ts]}") _nproj+=("${r_project[_ts]}") _ntg+=("${r_tags[_ts]}")
+      _npg+=("${r_progress[_ts]}") _ndu+=("${r_due[_ts]}") _nds+=("${r_due_state[_ts]}")
+      _nfo+=("${r_focus[_ts]}") _ntitle+=("${r_title[_ts]}")
+      for ((i = _ts+1; i < n; i++)); do
+        ((r_depth[i] == 0)) && break
+        _nd+=("${r_depth[i]}") _ni+=("${r_id[i]}") _ns+=("${r_status[i]}")
+        _nq+=("${r_prio[i]}") _nproj+=("${r_project[i]}") _ntg+=("${r_tags[i]}")
+        _npg+=("${r_progress[i]}") _ndu+=("${r_due[i]}") _nds+=("${r_due_state[i]}")
+        _nfo+=("${r_focus[i]}") _ntitle+=("${r_title[i]}")
+      done
+    done
+    r_depth=("${_nd[@]}") r_id=("${_ni[@]}") r_status=("${_ns[@]}")
+    r_prio=("${_nq[@]}") r_project=("${_nproj[@]}") r_tags=("${_ntg[@]}")
+    r_progress=("${_npg[@]}") r_due=("${_ndu[@]}") r_due_state=("${_nds[@]}")
+    r_focus=("${_nfo[@]}") r_title=("${_ntitle[@]}")
   fi
 
-  local -A prio_letter=([urgent]=U [high]=H [med]=M [low]=L)
-  local line prefix shown pad dim title_sgr due_sgr reset=${TD_SGR[reset]}
+  # ── column widths ──────────────────────────────────────────────────────────
+  local idw=1 tagw=0 duew=0 pgw=0 j
+  local focus_mark="${TD_SYM[focus]} "
   for ((i = 0; i < n; i++)); do
-    dim=""
-    td_status_is_closed "${r_status[i]}" && dim=${TD_SGR[dim]}
-    prefix=""
-    ((r_depth[i])) && prefix="  "
-    title_sgr=${dim:-${TD_SGR[bold]}}
-    if ((r_focus[i])); then
-      title_sgr=${TD_SGR[bold]}${TD_SGR[magenta]}
+    ((${#r_id[i]} > idw))       && idw=${#r_id[i]}
+    ((${#r_tags[i]} > tagw))    && tagw=${#r_tags[i]}
+    ((${#r_due[i]} > duew))     && duew=${#r_due[i]}
+    ((${#r_progress[i]} > pgw)) && pgw=${#r_progress[i]}
+  done
+  local cols; cols=$(td_term_cols); ((cols <= 0)) && cols=80
+  ((cols > 120)) && cols=120
+  # depth-1 prefix is 8 chars (widest); sym(2)+prio(2)+#id_space(idw+2)+sep(1) = idw+7
+  local right_w=$(( (duew>0 ? duew+2 : 0) + (pgw>0 ? pgw+2 : 0) + (tagw>0 ? tagw+2 : 0) ))
+  local titlew=$(( cols - (8 + idw + 7) - right_w ))
+  ((titlew < 12)) && titlew=12
+
+  # ── tree metadata ──────────────────────────────────────────────────────────
+  # is_last_in_proj[i]=1: no later depth-0 task shares the same project
+  # is_last_child[i]=1:   no later depth-1 in the same parent run
+  # parent_is_last[i]:    for depth-1, whether its preceding depth-0 is_last_in_proj
+  local -a is_last_in_proj=() is_last_child=() parent_is_last=()
+  for ((i = 0; i < n; i++)); do
+    is_last_in_proj+=(1) is_last_child+=(1) parent_is_last+=(0)
+  done
+  for ((i = 0; i < n; i++)); do
+    ((r_depth[i] == 0)) || continue
+    for ((j = i+1; j < n; j++)); do
+      ((r_depth[j] == 0)) && [[ "${r_project[j]}" == "${r_project[i]}" ]] \
+        && is_last_in_proj[i]=0 && break
+    done
+  done
+  local cur_plast=1
+  for ((i = 0; i < n; i++)); do
+    if ((r_depth[i] == 0)); then
+      cur_plast=${is_last_in_proj[i]}
+    else
+      parent_is_last[i]=$cur_plast
+      for ((j = i+1; j < n; j++)); do
+        ((r_depth[j] == 0)) && break
+        ((r_depth[j] == 1)) && is_last_child[i]=0 && break
+      done
     fi
-    td_truncate shown "${r_title[i]}" $((titlew - ${#prefix} - r_focus[i] * ${#focus_mark}))
-    ((r_focus[i])) && shown=$focus_mark$shown
-    pad=$((titlew - ${#prefix} - ${#shown}))
+  done
+
+  # ── render ─────────────────────────────────────────────────────────────────
+  local -A prio_letter=([urgent]=U [high]=H [med]=M [low]=L)
+  local reset=${TD_SGR[reset]} dim title_sgr due_sgr tree_pre tree_dim
+  local shown pad pre_len title_avail prev_project=""
+  local _rl_col _rl_i
+
+  _rldash() { for ((_rl_i=0;_rl_i<$1;_rl_i++)); do printf '─'; done; }
+
+  for ((i = 0; i < n; i++)); do
+
+    # Project header — printed on project change for top-level tasks
+    if ((r_depth[i] == 0)) && [[ "${r_project[i]}" != "$prev_project" ]]; then
+      local _ph="${r_project[i]}" _ph_fill
+      _ph_fill=$(( cols - ${#_ph} - 4 ))
+      ((_ph_fill < 1)) && _ph_fill=1
+      printf '\n  %s%s%s %s%s%s\n' \
+        "${TD_SGR[bold]}" "$_ph" "$reset" \
+        "${TD_SGR[gray]}" "$(_rldash $_ph_fill)" "$reset"
+      prev_project="${r_project[i]}"
+    fi
+
+    # Tree connector (5 chars for depth-0, 8 chars for depth-1)
+    if ((r_depth[i] == 0)); then
+      ((is_last_in_proj[i])) && tree_pre="  └─ " || tree_pre="  ├─ "
+    else
+      local vbar; ((parent_is_last[i])) && vbar="     " || vbar="  │  "
+      ((is_last_child[i])) && tree_pre="${vbar}└─ " || tree_pre="${vbar}├─ "
+    fi
+
+    # Dim closed tasks; bold/coloured open and focused
+    dim=""; td_status_is_closed "${r_status[i]}" && dim=${TD_SGR[dim]}
+    title_sgr=${dim:-${TD_SGR[bold]}}
+    ((r_focus[i])) && title_sgr=${TD_SGR[bold]}${TD_SGR[magenta]}
+
+    # Title — depth-0 prefix is 5 chars so gains 3 chars vs the depth-1 budget
+    pre_len=${#tree_pre}
+    title_avail=$(( titlew + 8 - pre_len ))
+    ((r_focus[i])) && title_avail=$(( title_avail - ${#focus_mark} ))
+    td_truncate shown "${r_title[i]}" "$title_avail"
+    ((r_focus[i])) && shown="${focus_mark}${shown}"
+    pad=$(( titlew + 8 - pre_len - ${#shown} ))
+    ((pad < 0)) && pad=0
+
+    # Due colour
     case ${r_due_state[i]} in
       overdue) due_sgr=${TD_SGR[bold]}${TD_SGR[red]} ;;
-      today) due_sgr=${TD_SGR[yellow]} ;;
-      later) due_sgr=${TD_SGR[gray]} ;;
-      *) due_sgr="" ;;
+      today)   due_sgr=${TD_SGR[yellow]} ;;
+      *)       due_sgr=${TD_SGR[gray]} ;;
     esac
-    printf -v line '%s%s%s%s %s%s%s %s#%-*s%s %s%s%*s  %s%-*s%s  %s%-*s%s  %s%-*s%s  %s' \
-      "$dim" "$prefix" "$(td_status_color "${r_status[i]}")" "${TD_SYM[${r_status[i]}]}" \
-      "$reset$dim$(td_priority_color "${r_prio[i]}")" "${prio_letter[${r_prio[i]}]:-?}" "$reset$dim" \
-      "${TD_SGR[gray]}" "$idw" "${r_id[i]}" "$reset$dim" \
-      "$title_sgr" "$shown" "$pad" "" \
-      "$reset$dim$due_sgr" "$duew" "${r_due[i]}" "$reset$dim" \
-      "${TD_SGR[magenta]}" "$projw" "${r_project[i]}" "$reset$dim" \
-      "${TD_SGR[cyan]}" "$tagw" "${r_tags[i]}" "$reset$dim" \
-      "${r_progress[i]}"
-    # Drop trailing padding so piped output has no dangling spaces.
-    line=${line%%+( )}
-    printf '%s%s\n' "$line" "$reset"
+
+    # Tree connector in muted colour; everything else uses dim for closed tasks
+    tree_dim="${TD_SGR[gray]}${dim}"
+    printf '%s%s%s%s%s %s%s %s#%-*s%s %s%s%*s' \
+      "$tree_dim" "$tree_pre" "$reset$dim" \
+      "$(td_status_color "${r_status[i]}")" "${TD_SYM[${r_status[i]}]}" \
+      "$reset$dim$(td_priority_color "${r_prio[i]}")" "${prio_letter[${r_prio[i]}]:-?}" \
+      "$reset$dim${TD_SGR[gray]}" "$idw" "${r_id[i]}" "$reset$dim" \
+      "$title_sgr" "$shown" \
+      "$pad" ""
+
+    # Right-side columns (only when non-empty)
+    [[ -n ${r_due[i]} ]]      && printf '  %s%-*s%s' "$due_sgr" "$duew" "${r_due[i]}" "$reset$dim"
+    [[ -n ${r_progress[i]} ]] && printf '  %s%-*s%s' "${TD_SGR[gray]}" "$pgw" "${r_progress[i]}" "$reset$dim"
+    [[ -n ${r_tags[i]} ]]     && printf '  %s%s%s'   "${TD_SGR[cyan]}" "${r_tags[i]}" "$reset"
+    printf '\n'
   done
+  printf '\n'
+
+  unset -f _rldash
 }
 
 # _td_due_warnings — on a terminal, print a one-line summary of open tasks
@@ -463,51 +562,88 @@ _td_due_warnings() {
 
 # --- show / log ------------------------------------------------------------
 
-td_register_cmd show Tasks "Show a task with its subtasks and history"
+td_register_cmd show Tasks "Show one or more tasks as cards"
 td_help_show() {
   printf '%s\n' \
-    "Usage: todosh show <id>" \
+    "Usage: todosh show <id> [<id>...] [<from>-<to>]" \
     "" \
-    "Shows fields, description, subtasks and the full history." \
+    "Show tasks as cards with fields, description, subtasks and history." \
+    "IDs and ranges can be mixed:  todosh show 1 3 10-15 20" \
     "Tasks in the trash can be shown too." \
-    "With --json: {\"task\": {...}, \"subtasks\": [...], \"trashed\": bool}"
+    "With --json: array of {task, subtasks, trashed} objects"
 }
 
 td_cmd_show() {
-  if td_wants_help "$@"; then
-    td_help_show
-    return 0
-  fi
-  if (($# != 1)); then
-    td_usage_err show "expected exactly one task id"
+  if td_wants_help "$@"; then td_help_show; return 0; fi
+  if (($# < 1)); then
+    td_usage_err show "expected at least one task id or range (e.g. 5 or 1-10)"
     return
   fi
-  local id=$1 area=tasks record subtasks
-  if ! td_valid_id "$id"; then
-    td_usage_err show "invalid task id: '$id'"
-    return
-  fi
+
+  # Parse IDs and ranges: each arg is a plain number or N-M.
+  local -a ids=()
+  local arg lo hi n
+  for arg in "$@"; do
+    if [[ $arg =~ ^([0-9]+)-([0-9]+)$ ]]; then
+      lo=${BASH_REMATCH[1]} hi=${BASH_REMATCH[2]}
+      ((lo > hi)) && { local tmp=$lo; lo=$hi; hi=$tmp; }
+      for ((n = lo; n <= hi; n++)); do ids+=("$n"); done
+    elif td_valid_id "$arg"; then
+      ids+=("$arg")
+    else
+      td_usage_err show "invalid id or range: '$arg' (use plain numbers or N-M)"
+      return
+    fi
+  done
+
   td_storage_init || return
-  [[ -f $TD_DATA_DIR/tasks/$id.json ]] || area=trash
-  if [[ ! -f $TD_DATA_DIR/$area/$id.json ]]; then
-    td_err "task #$id not found"
-    return "$TD_E_NOTFOUND"
-  fi
-  record=$(td_task_read "$id" "$area") || return
-  subtasks=$(td_tasks_select "{\"parent\": $id, \"visibility\": \"all\"}" "$area") || return
+
+  local id area record subtasks any_missing=0
+  local -a cards=()
+
+  for id in "${ids[@]}"; do
+    area=tasks
+    [[ -f $TD_DATA_DIR/tasks/$id.json ]] || area=trash
+    if [[ ! -f $TD_DATA_DIR/$area/$id.json ]]; then
+      if ((${#ids[@]} > 1)); then
+        printf '%s#%s not found%s\n' "${TD_SGR[red]}" "$id" "${TD_SGR[reset]}" >&2
+        any_missing=1; continue
+      fi
+      td_err "task #$id not found"; return "$TD_E_NOTFOUND"
+    fi
+    record=$(td_task_read "$id" "$area") || return
+    subtasks=$(td_tasks_select "{\"parent\": $id, \"visibility\": \"all\"}" "$area") || return
+    if ((TD_OPT_JSON)); then
+      cards+=("$(jq -n --argjson t "$record" --argjson s "$subtasks" --arg a "$area" \
+        '{task:$t,subtasks:$s,trashed:($a=="trash")}')")
+    else
+      cards+=("$(_td_show_card "$record" "$subtasks" "$area")")
+    fi
+  done
 
   if ((TD_OPT_JSON)); then
-    jq -n --argjson task "$record" --argjson subtasks "$subtasks" --arg area "$area" \
-      '{task: $task, subtasks: $subtasks, trashed: ($area == "trash")}'
+    if ((${#ids[@]} == 1 && !any_missing)); then printf '%s\n' "${cards[0]}"
+    else
+      printf '['; local sep=""
+      for c in "${cards[@]}"; do printf '%s%s' "$sep" "$c"; sep=","; done
+      printf ']\n'
+    fi
     return
   fi
-  local out
-  out=$(_td_render_show "$record" "$subtasks" "$area") || return
+
+  local out; out=$(printf '%s\n' "${cards[@]}")
   td_page "$out"
 }
 
-# _td_render_show RECORD SUBTASKS AREA
-_td_render_show() {
+# _td_card_dlen VAR TEXT — display width (strips ANSI, counts Unicode chars).
+_td_card_dlen() {
+  local -n _cdl=$1
+  local _s; _s=$(printf '%s' "$2" | sed $'s/\033\\[[0-9;]*[mK]//g')
+  _cdl=$(printf '%s' "$_s" | wc -m)
+}
+
+# _td_show_card RECORD SUBTASKS AREA
+_td_show_card() {
   local record=$1 subtasks=$2 area=$3
   local -a f
   local today focused since
@@ -520,58 +656,160 @@ _td_render_show() {
      (.tags | map("+" + .) | join(" ")), (.parent // ""), (.created | when),
      (.updated | when), (.closed | when), (.due // ""), (due_info.text // ""),
      (due_info.state // ""), ([.history[] | select(.type == "focus") | .seconds] | add // 0),
-     (.description | clean)]
+     (.description // "" | clean)]
     | map(tostring + "\u0000") | add' <<<"$record")
   local id=${f[0]} title=${f[1]} status=${f[2]} prio=${f[3]} project=${f[4]}
   local tags=${f[5]} parent=${f[6]} created=${f[7]} updated=${f[8]} closed=${f[9]}
-  local due=${f[10]} due_text=${f[11]} due_state=${f[12]} worked=${f[13]} desc=${f[14]}
-  local b=${TD_SGR[bold]} r=${TD_SGR[reset]} g=${TD_SGR[gray]}
+  local due=${f[10]} due_disp=${f[11]} due_state=${f[12]} worked=${f[13]} desc=${f[14]}
 
-  printf '%s#%s %s%s\n' "$b" "$id" "$title" "$r"
-  [[ $area == trash ]] && printf '%s(in the trash: todosh undelete %s)%s\n' "${TD_SGR[red]}" "$id" "$r"
-  printf '  %sStatus%s    %s%s %s%s\n' "$g" "$r" "$(td_status_color "$status")" \
-    "${TD_SYM[$status]}" "$status" "$r"
-  printf '  %sPriority%s  %s%s%s\n' "$g" "$r" "$(td_priority_color "$prio")" "$prio" "$r"
-  printf '  %sProject%s   %s\n' "$g" "$r" "$project"
-  [[ -n $tags ]] && printf '  %sTags%s      %s%s%s\n' "$g" "$r" "${TD_SGR[cyan]}" "$tags" "$r"
+  local bld=${TD_SGR[bold]} rst=${TD_SGR[reset]} dim=${TD_SGR[gray]}
+  local cyan=${TD_SGR[cyan]} mag=${TD_SGR[magenta]} red_c=${TD_SGR[red]} yel=${TD_SGR[yellow]}
+  local st_c; st_c=$(td_status_color "$status")
+  local pr_c; pr_c=$(td_priority_color "$prio")
+
+  # Card width: fit terminal, cap 100, floor 64.
+  local w; w=$(tput cols 2>/dev/null) || w=80
+  ((w > 100)) && w=100; ((w < 64)) && w=64
+  local iw=$((w - 4))
+
+  # Inline helpers — _cw/_ciw capture width so helpers work inside subshells.
+  local _cw=$w _ciw=$iw
+  _dashes() { local i; for ((i=0;i<$1;i++)); do printf '─'; done; }
+  _ln()    { local p=$((_ciw-$1)); ((p<0))&&p=0; printf '│ %s%*s │\n' "$2" "$p" ""; }
+  _blank() { printf '│%*s│\n' $((_cw-2)) ""; }
+  _sep()   {
+    if [[ -n ${1:-} ]]; then
+      local r=$((_cw-${#1}-5)); ((r<1))&&r=1
+      printf '├─ %s %s┤\n' "${2:-$1}" "$(_dashes $r)"
+    else printf '├%s┤\n' "$(_dashes $((_cw-2)))"; fi
+  }
+
+  # ── top border: ┌─ #ID ──── project ─┐ ──
+  local id_v="─ #${id} " proj_v=" ${project} ─"
+  local mid=$(( w - ${#id_v} - ${#proj_v} - 2 )); ((mid<1))&&mid=1
+  printf '┌%s%s%s┐\n' \
+    "${bld}${id_v}${rst}" \
+    "$(_dashes $mid)" \
+    "${dim}${proj_v}${rst}"
+
+  # ── title (wrapped) ──
+  # Use capture+herestring instead of process substitution — process substitution
+  # inside a command substitution subshell is unreliable on some bash versions.
+  _blank
+  local _fold_title; _fold_title=$(printf '%s' "$title" | fold -sw "$iw")
+  local tl; while IFS= read -r tl; do _ln "${#tl}" "${bld}${tl}${rst}"
+  done <<< "$_fold_title"
+
+  # ── trash notice ──
+  if [[ $area == trash ]]; then
+    _blank
+    local tv="  In the trash  ·  todosh undelete $id"
+    local tv_d; _td_card_dlen tv_d "$tv"
+    _ln "$tv_d" "  ${red_c}${bld}In the trash${rst}  ·  todosh undelete $id"
+  fi
+
+  # ── badges: status · priority · due · focus ──
+  _blank
+  # TD_SYM chars = 1 display column each in modern terminals.
+  local sym=${TD_SYM[$status]:-o}
+  local st_d=$(( 2 + ${#status} ))
+  local st_s="${st_c}${sym} ${status}${rst}"
+  local pr_d=${#prio}
+  local pr_s="${pr_c}${prio}${rst}"
+
+  local due_d due_raw due_s
+  if [[ -n $due_disp ]]; then
+    due_raw="$due_disp"; due_d=${#due_disp}
+    local dc=""; [[ $due_state == overdue ]] && dc="${bld}${red_c}"
+    [[ $due_state == today ]] && dc="${yel}"
+    due_s="${dc}${due_disp}${rst}"
+  else
+    due_raw="─"; due_d=1; due_s="${dim}─${rst}"
+  fi
+
+  local foc_d=0 foc_s="" foc_raw=""
+  if [[ $id == "$focused" ]]; then
+    local sess; sess=$(_td_seconds_since "$since"); worked=$((worked + sess))
+    foc_raw="${TD_SYM[focus]} $(td_fmt_duration "$sess")"
+    _td_card_dlen foc_d "$foc_raw"; foc_s="${mag}${foc_raw}${rst}"
+  fi
+
+  # Three equal columns + optional focus.
+  local col=$(( iw / 4 ))
+  local p1=$(( col > st_d+2 ? col-st_d : 2 ))
+  local p2=$(( col > pr_d+2 ? col-pr_d : 2 ))
+  local p3=$(( col > due_d+2 ? col-due_d : 2 ))
+  local bv="${sym} ${status}$(printf '%*s' $p1 '')${prio}$(printf '%*s' $p2 '')${due_raw}"
+  local bd=$(( st_d + p1 + pr_d + p2 + due_d ))
+  local bs="${st_s}$(printf '%*s' $p1 '')${pr_s}$(printf '%*s' $p2 '')${due_s}"
+  if [[ -n $foc_s ]]; then
+    bv+="$(printf '%*s' $p3 '')${foc_raw}"
+    bd=$(( bd + p3 + foc_d ))
+    bs+="$(printf '%*s' $p3 '')${foc_s}"
+  fi
+  _ln "$bd" "$bs"
+
+  # ── tags ──
+  [[ -n $tags ]] && _ln "${#tags}" "${cyan}${tags}${rst}"
+
+  # ── worked (outside focus) ──
+  if ((worked > 0)) && [[ $id != "$focused" ]]; then
+    local wv="⏱ $(td_fmt_duration "$worked") worked"
+    local wd; _td_card_dlen wd "$wv"; _ln "$wd" "${dim}${wv}${rst}"
+  fi
+
+  # ── parent ──
   if [[ -n $parent ]]; then
     local ptitle=""
     [[ -f $TD_DATA_DIR/$area/$parent.json ]] \
       && ptitle=$(jq -r '.title' "$TD_DATA_DIR/$area/$parent.json")
-    printf '  %sParent%s    #%s %s\n' "$g" "$r" "$parent" "$ptitle"
+    local pv="↑ Parent  #${parent}  ${ptitle}"
+    local pd; _td_card_dlen pd "$pv"
+    _ln "$pd" "${dim}↑ Parent  ${rst}#${parent}  ${ptitle}"
   fi
-  if [[ -n $due ]]; then
-    local due_sgr=""
-    [[ $due_state == overdue ]] && due_sgr=${TD_SGR[bold]}${TD_SGR[red]}
-    [[ $due_state == today ]] && due_sgr=${TD_SGR[yellow]}
-    if [[ $due_text == "$due" ]]; then
-      printf '  %sDue%s       %s%s%s\n' "$g" "$r" "$due_sgr" "$due" "$r"
-    else
-      printf '  %sDue%s       %s%s (%s)%s\n' "$g" "$r" "$due_sgr" "$due" "$due_text" "$r"
-    fi
-  fi
-  if [[ $id == "$focused" ]]; then
-    local session
-    session=$(_td_seconds_since "$since")
-    worked=$((worked + session))
-    printf '  %sFocus%s     %s%s in focus for %s%s\n' "$g" "$r" "${TD_SGR[magenta]}" \
-      "${TD_SYM[focus]}" "$(td_fmt_duration "$session")" "$r"
-  fi
-  ((worked > 0)) && printf '  %sWorked%s    %s\n' "$g" "$r" "$(td_fmt_duration "$worked")"
-  printf '  %sCreated%s   %s\n' "$g" "$r" "$created"
-  printf '  %sUpdated%s   %s\n' "$g" "$r" "$updated"
-  [[ -n $closed ]] && printf '  %sClosed%s    %s\n' "$g" "$r" "$closed"
 
+  # ── description ──
   if [[ -n $desc ]]; then
-    printf '\n%sDescription%s\n' "$b" "$r"
-    printf '%s\n' "$desc" | sed 's/^/  /'
+    _blank; _sep "Description" "${bld}Description${rst}"
+    local _fold_desc; _fold_desc=$(printf '%s' "$desc" | fold -sw "$iw")
+    local dl; while IFS= read -r dl; do _ln "${#dl}" "$dl"
+    done <<< "$_fold_desc"
   fi
-  if [[ $(jq length <<<"$subtasks") -gt 0 ]]; then
-    printf '\n%sSubtasks%s\n' "$b" "$r"
-    _td_render_list "$subtasks" | sed 's/^/  /'
+
+  # ── subtasks ──
+  local nsubs; nsubs=$(jq length <<<"$subtasks")
+  if ((nsubs > 0)); then
+    local ndone; ndone=$(jq '[.[]|select(.status=="DONE")]|length' <<<"$subtasks")
+    local slabel="${ndone}/${nsubs} done"
+    _blank; _sep "Subtasks ($slabel)" "${bld}Subtasks${rst} ${dim}($slabel)${rst}"
+    local _subs_lines
+    _subs_lines=$(jq -r '.[]|[(.id|tostring),.status,(.title|gsub("[[:cntrl:]]";"+"))]|join("")' <<<"$subtasks" | head -20)
+    local sid sstatus stitle ssym ssc slv sld
+    while IFS=$'' read -r sid sstatus stitle; do
+      ssym=${TD_SYM[$sstatus]:-o}; ssc=$(td_status_color "$sstatus")
+      slv="  ${ssym} #${sid}  ${stitle}"
+      _td_card_dlen sld "$slv"
+      _ln "$sld" "  ${ssc}${ssym}${rst} ${dim}#${sid}${rst}  ${stitle}"
+    done <<< "$_subs_lines"
   fi
-  printf '\n%sHistory%s\n' "$b" "$r"
-  _td_render_history "$record" all
+
+  # ── history ──
+  _blank; _sep "History" "${bld}History${rst}"
+  local hl hld
+  local _hist_out; _hist_out=$(_td_render_history "$record" all)
+  while IFS= read -r hl; do _td_card_dlen hld "$hl"; _ln "$hld" "$hl"
+  done <<< "$_hist_out"
+
+  # ── footer ──
+  _blank; _sep
+  local dv="Created ${created}  ·  Updated ${updated}"
+  local ds="${dim}Created ${rst}${created}${dim}  ·  Updated ${rst}${updated}"
+  [[ -n $closed ]] && dv+="  ·  Closed ${closed}" \
+    && ds+="${dim}  ·  Closed ${rst}${closed}"
+  _ln "${#dv}" "$ds"
+  printf '└%s┘\n' "$(_dashes $((w-2)))"
+
+  unset -f _ln _blank _sep _dashes
 }
 
 # _td_seconds_since TIMESTAMP — print seconds elapsed since a UTC timestamp.
@@ -1603,10 +1841,15 @@ td_help_project() {
     "" \
     "  list          Tree with open/done counts (default)" \
     "  add PATH      Create a project (and its parents)" \
-    "  remove PATH   Remove an empty project and its subprojects" \
+    "  remove PATH   Remove a project and its subprojects." \
+    "                If the project has tasks you will be shown a red warning" \
+    "                and asked to confirm with a 6-character code that contains" \
+    "                at least one uppercase W (e.g. W3rm4n, dW4rp9)." \
+    "                Live tasks are moved to the trash; trashed tasks are left." \
     "" \
     "Examples:" \
     "  todosh project add 'HardwareHacking/RF & SDR'" \
+    "  todosh project remove 'HardwareHacking/P1 Fundamentos'" \
     "  todosh add Learn the fundamentals 'p:HardwareHacking/RF & SDR'"
 }
 td_help_projects() { td_help_project; }
@@ -1656,12 +1899,63 @@ td_cmd_project() {
           printf 'Project %s already exists\n' "$1"
         fi
       else
-        td_project_remove "$1" || return
-        ((TD_OPT_JSON)) && jq -n --arg p "$1" '{removed: $p}' || printf 'Removed project %s\n' "$1"
+        _td_cmd_project_remove "$1" || return
       fi
       ;;
     *) td_usage_err project "unknown subcommand: $sub" ;;
   esac
+}
+
+# _td_cmd_project_remove PATH — remove a project, prompting for a warning code
+# when the project has live or trashed tasks.
+_td_cmd_project_remove() {
+  local p=$1 live=0 trashed=0
+  td_project_task_count "$p" live trashed || return
+
+  local total=$((live + trashed))
+  if ((total == 0)); then
+    # No tasks — remove without any ceremony.
+    td_project_remove "$p" || return
+    ((TD_OPT_JSON)) && jq -n --arg p "$p" '{removed: $p, tasks_trashed: 0}' \
+      || printf 'Removed project %s\n' "$p"
+    return 0
+  fi
+
+  # Project has tasks — show a captcha-style confirmation code.
+  local red=${TD_SGR[red]}${TD_SGR[bold]} reset=${TD_SGR[reset]} bold=${TD_SGR[bold]}
+
+  printf '%sWARNING: project '\''%s'\'' has %d task(s)%s\n' \
+    "$red" "$p" "$total" "$reset" >&2
+  ((live > 0)) && printf '%s  %d live task(s) will be moved to the trash.%s\n' \
+    "$red" "$live" "$reset" >&2
+  ((trashed > 0)) && printf '%s  %d task(s) are already in the trash and will remain there.%s\n' \
+    "$red" "$trashed" "$reset" >&2
+  printf '%s  Deleting a project with tasks cannot be undone without manual recovery.%s\n' \
+    "$red" "$reset" >&2
+
+  local confirm_code
+  td_project_gen_code confirm_code
+  printf '\n%sType this code to confirm:%s %s%s%s\n' \
+    "$bold" "$reset" "${TD_SGR[yellow]}$bold" "$confirm_code" "$reset" >&2
+  printf '%s> %s' "$bold" "$reset" >&2
+
+  local typed=""
+  IFS= read -r typed
+
+  if [[ $typed != "$confirm_code" ]]; then
+    td_err "incorrect code (expected $confirm_code, got '$typed')"
+    return "$TD_E_USAGE"
+  fi
+
+  td_project_remove_force "$p" || return
+
+  if ((TD_OPT_JSON)); then
+    jq -n --arg p "$p" --argjson t "$live" '{removed: $p, tasks_trashed: $t}'
+  else
+    local msg="Removed project $p"
+    ((live > 0)) && msg+=" ($live task(s) moved to trash)"
+    printf '%s\n' "$msg"
+  fi
 }
 
 # _td_render_projects TREE_JSON — the project tree with counts.
