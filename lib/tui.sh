@@ -635,18 +635,26 @@ _tui_banner_art() {
   local -a lines=()
   case $choice in
     none) return 0 ;;
-    big | small) file=$TD_SHARE_DIR/banners/$choice.txt ;;
+    big | medium | small) file=$TD_SHARE_DIR/banners/$choice.txt ;;
     auto) file=$TD_SHARE_DIR/banners/big.txt ;;
     *) file=$(_tui_expand_path "$choice") ;;
   esac
   [[ -f $file && -r $file ]] || return 0
   mapfile -t lines <"$file"
   for line in "${lines[@]}"; do ((${#line} > max)) && max=${#line}; done
-  # auto: the big art when it fits, else the small one.
+  # auto: big → medium → small, using the largest that fits the width.
   if ((max > width)) && [[ $choice == auto ]]; then
-    mapfile -t lines <"$TD_SHARE_DIR/banners/small.txt"
-    max=0
-    for line in "${lines[@]}"; do ((${#line} > max)) && max=${#line}; done
+    local medium_file="$TD_SHARE_DIR/banners/medium.txt"
+    if [[ -f $medium_file && -r $medium_file ]]; then
+      mapfile -t lines <"$medium_file"
+      max=0
+      for line in "${lines[@]}"; do ((${#line} > max)) && max=${#line}; done
+    fi
+    if ((max > width)); then
+      mapfile -t lines <"$TD_SHARE_DIR/banners/small.txt"
+      max=0
+      for line in "${lines[@]}"; do ((${#line} > max)) && max=${#line}; done
+    fi
   fi
   ((max <= width)) || return 0
   # Box-drawing art needs Unicode.
@@ -1204,11 +1212,30 @@ _tui_action() {
       fi
       ;;
     remove_project)
+      [[ ${U_KIND[TUI_SEL]:-} == G ]] || return 0
       local g=${U_GROUP[TUI_SEL]:-}
       [[ -n $g ]] || return 0
-      _tui_confirm "Remove the empty project $g?" "Remove" || return 0
-      td_project_remove "$g" || rc=$?
-      _tui_done "$rc" "Project $g removed"
+      local live=0 trashed=0
+      td_project_task_count "$g" live trashed
+      local total=$((live + trashed))
+      if ((total == 0)); then
+        _tui_confirm "Remove the empty project $g?" "Remove" || return 0
+        td_project_remove "$g" || rc=$?
+        _tui_done "$rc" "Project $g removed"
+      else
+        local -a warn=()
+        warn+=("Project '$g' has $total task(s)")
+        ((live > 0))    && warn+=("  $live live task(s) will be moved to the trash")
+        ((trashed > 0)) && warn+=("  $trashed task(s) in trash (will remain there)")
+        warn+=("This cannot be undone without manual recovery")
+        td_project_gen_code PRD_CODE
+        _tui_project_remove_confirm "${warn[@]}" || return 0
+        td_project_remove_force "$g" || { _tui_toast error "$TD_LAST_ERROR"; return 0; }
+        local msg="Project $g removed"
+        ((live > 0)) && msg+=" · $live task(s) moved to trash"
+        _tui_reload
+        _tui_toast ok "$msg"
+      fi
       ;;
     new_sub)
       [[ -n $id ]] || return 0
@@ -1656,7 +1683,7 @@ _tui_palette() {
   local -a items=()
   local entry a label key
   for entry in \
-    "new|New task|n" "new_sub|New subtask|N" "new_project|New project / subproject|P" "remove_project|Remove empty project|" "edit|Edit task|e" "notes|Edit notes in editor|E" \
+    "new|New task|n" "new_sub|New subtask|N" "new_project|New project / subproject|P" "remove_project|Remove project|" "edit|Edit task|e" "notes|Edit notes in editor|E" \
     "comment|Add a comment|c" "toggle_done|Done / reopen|space" "start|Start|s" "block|Block|b" \
     "cancel|Cancel task|x" "reopen|Reopen|r" "priority|Change priority|p" "move|Move to project|m" \
     "tags|Edit tags|t" "focus|Focus / release focus|f" "delete|Delete task|D" "undo|Undo delete|u" \

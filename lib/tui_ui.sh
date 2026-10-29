@@ -445,6 +445,90 @@ _tui_confirm_key() {
   return 0
 }
 
+# --- project removal warning dialog -------------------------------------------
+# Shows red warning lines, a generated captcha code, then an input where the
+# user must type back the exact code shown to confirm deletion.
+
+declare -ga PRD_LINES=()
+PRD_VAL="" PRD_CUR=0 PRD_ERR="" PRD_CODE=""
+
+# _tui_project_remove_confirm LINE... — modal that displays PRD_CODE and asks
+# the user to retype it. Set PRD_CODE before calling. Succeeds when the user
+# types the code correctly; fails on cancel.
+_tui_project_remove_confirm() {
+  PRD_LINES=("$@") PRD_VAL="" PRD_CUR=0 PRD_ERR=""
+  _tui_modal _tui_prd_layer _tui_prd_key
+}
+
+_tui_prd_layer() {
+  local iw=0 line
+  for line in "${PRD_LINES[@]}"; do ((${#line} > iw)) && iw=${#line}; done
+  # Account for the "Type this code: XXXXXX" line width
+  local code_line="Type this code to confirm:  ${PRD_CODE}"
+  ((${#code_line} > iw)) && iw=${#code_line}
+  local w=$((iw + 8))
+  ((w < 52)) && w=52
+  ((w > TUI_COLS - 4)) && w=$((TUI_COLS - 4))
+  local fw=$((w - 4))
+  local nlines=${#PRD_LINES[@]}
+  # Rows: border + blank + nlines + blank + code-label + code + blank + input + error + hint + border
+  local h=$((nlines + 10)) top left
+  _tui_center top left "$w" "$h"
+  _tui_box "$top" "$left" "$w" "$h" "WARNING"
+
+  local row=$((top + 2)) i
+  for ((i = 0; i < nlines; i++)); do
+    _tl_start "$fw" "${TUI_B[modal]}"
+    _tl_add "${TD_TC[red]}${TD_TC[bold]}" "${PRD_LINES[i]}"
+    _tl_end
+    _tui_ov "$row" $((left + 2)) "$TL"
+    ((row++))
+  done
+
+  ((row++))  # blank separator before code
+  _tl_start "$fw" "${TUI_B[modal]}"
+  _tl_add "${TD_TC[accent]}${TD_TC[bold]}" "Type this code to confirm:"
+  _tl_add "" "  "
+  _tl_add "${TD_TC[yellow]}${TD_TC[bold]}" "$PRD_CODE"
+  _tl_end
+  _tui_ov "$row" $((left + 2)) "$TL"
+  ((row++))
+
+  ((row++))  # blank separator before input
+  _tl_start "$fw" "${TUI_B[modal]}"
+  _tl_input "$PRD_VAL" "$PRD_CUR" "$fw" 1
+  _tl_end
+  _tui_ov "$row" $((left + 2)) "$TL"
+  ((row++))
+
+  _tl_start "$fw" "${TUI_B[modal]}"
+  [[ -n $PRD_ERR ]] && _tl_add "${TD_TC[red]}" "$PRD_ERR"
+  _tl_end
+  _tui_ov "$row" $((left + 2)) "$TL"
+  ((row++))
+
+  _tl_start "$fw" "${TUI_B[modal]}"
+  _tl_add "${TD_TC[muted]}" "⏎ confirm · Esc cancel"
+  _tl_end
+  _tui_ov "$row" $((left + 2)) "$TL"
+}
+
+_tui_prd_key() {
+  case $1 in
+    enter)
+      if [[ $PRD_VAL != "$PRD_CODE" ]]; then
+        PRD_ERR="Incorrect code — try again"
+        PRD_VAL="" PRD_CUR=0
+        return 0
+      fi
+      return 1
+      ;;
+    esc | ctrl-c) return 2 ;;
+    *) _tui_edit PRD_VAL PRD_CUR "$1" ;;
+  esac
+  return 0
+}
+
 # --- single-line input dialog --------------------------------------------------
 
 IN_TITLE="" IN_LABEL="" IN_VAL="" IN_CUR=0 IN_HINT="" IN_EDITOR=0 IN_ALLOW_EMPTY=0
@@ -645,7 +729,13 @@ _tui_pick_layer() {
   done
   _tl_start "$iw" "${TUI_B[modal]}"
   local hint="↑↓ move · ⏎ choose · Esc cancel · type to filter"
-  ((PK_MULTI)) && hint="↑↓ move · Space toggle · ⏎ done · Esc cancel · type to filter"
+  if ((PK_MULTI)); then
+    if [[ -n $PK_FILTER ]]; then
+      hint="↑↓ move · Space toggle · ⏎ add · Ctrl-S done · Esc cancel"
+    else
+      hint="↑↓ move · Space toggle · ⏎ done · Esc cancel · type to add/filter"
+    fi
+  fi
   _tl_add "${TD_TC[muted]}" "$hint"
   _tl_end
   _tui_ov $((top + h - 2)) $((left + 2)) "$TL"
@@ -667,9 +757,15 @@ _tui_pick_key() {
       fi
       v=${PK_VIEW[PK_SEL]%%$'\x1f'*}
       if ((PK_MULTI)); then
-        # Enter on a "create" row, or on a filtered item, means "this one":
-        # check it and finish. Space checks several without leaving.
-        [[ -n $PK_FILTER ]] && PK_ON[k$v]=1
+        if [[ -n $PK_FILTER ]]; then
+          # Enter with filter: check the item, clear the filter, stay open
+          # so the user can keep adding more items without closing the picker.
+          PK_ON[k$v]=1
+          PK_FILTER="" PK_FCUR=0
+          _tui_pick_filter
+          return 0
+        fi
+        # Enter with empty filter: confirm and close.
         return 1
       fi
       TUI_PICKED=$v
