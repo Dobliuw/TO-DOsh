@@ -20,6 +20,29 @@ TD_LOCK_FD=""
 TD_LOCK_DEPTH=0
 TD_LOCK_TIMEOUT=${TODOSH_LOCK_TIMEOUT:-5}
 
+# td_gen_uuid VAR — generate a random UUID v4 and store it in VAR.
+# Tries uuidgen, then /proc/sys/kernel/random/uuid, then /dev/urandom.
+td_gen_uuid() {
+  local -n _td_uuid=$1
+  if command -v uuidgen >/dev/null 2>&1; then
+    _td_uuid=$(uuidgen | tr '[:upper:]' '[:lower:]')
+    return 0
+  fi
+  if [[ -r /proc/sys/kernel/random/uuid ]]; then
+    _td_uuid=$(</proc/sys/kernel/random/uuid)
+    return 0
+  fi
+  local h d
+  if h=$(od -N 16 -A n -t x1 /dev/urandom 2>/dev/null | tr -d ' \n') \
+     && (( ${#h} >= 32 )); then
+    printf -v d '%02x' "$(( (16#${h:16:2} & 0x3f) | 0x80 ))"
+    _td_uuid="${h:0:8}-${h:8:4}-4${h:13:3}-${d}${h:18:2}-${h:20:12}"
+    return 0
+  fi
+  td_err "cannot generate a UUID (install uuidgen or ensure /dev/urandom is readable)"
+  return "$TD_E_ERR"
+}
+
 # td_storage_init — create the data directory if needed and check its schema.
 td_storage_init() {
   td_require_cmds jq flock mktemp || return
@@ -52,7 +75,10 @@ td_storage_init() {
   if [[ ! -e $TD_DATA_DIR/meta.json ]]; then
     td_with_lock _td_meta_create || return
   fi
-  td_storage_check_schema
+  td_storage_check_schema || return
+  # Compatible migration: add 'uuid' to tasks that pre-date this feature.
+  # Schema version stays at 1 (adding a field is always compatible).
+  _td_migrate_uuids
 }
 
 _td_meta_create() {
@@ -286,4 +312,34 @@ td_next_id() {
   done
   td_write_json "$_td_meta" "$(jq --argjson n $((_td_next + 1)) '.next_id = $n' "$_td_meta")" || return
   _td_id=$_td_next
+}
+
+# --- uuid migration ---------------------------------------------------------
+
+# _td_migrate_uuids — add a 'uuid' field to any task that was created before
+# this feature existed. Non-fatal: a failure to generate a UUID is skipped.
+_td_migrate_uuids() {
+  local area file needs=0
+  for area in tasks trash; do
+    for file in "$TD_DATA_DIR/$area"/*.json; do
+      [[ -f $file ]] || continue
+      jq -e '.uuid // empty' "$file" >/dev/null 2>&1 || { needs=1; break 2; }
+    done
+  done
+  (( needs )) || return 0
+  td_with_lock _td_migrate_uuids_locked
+}
+
+_td_migrate_uuids_locked() {
+  local area file uuid json
+  for area in tasks trash; do
+    for file in "$TD_DATA_DIR/$area"/*.json; do
+      [[ -f $file ]] || continue
+      jq -e '.uuid // empty' "$file" >/dev/null 2>&1 && continue
+      td_gen_uuid uuid 2>/dev/null || continue
+      [[ -n $uuid ]] || continue
+      json=$(jq -c --arg uuid "$uuid" '. + {uuid: $uuid}' "$file") || continue
+      td_write_json "$file" "$json" || return
+    done
+  done
 }

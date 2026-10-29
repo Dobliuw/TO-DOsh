@@ -33,7 +33,7 @@ td_config_valid() {
     archive_after_days) [[ $value =~ ^(0|[1-9][0-9]{0,3})$ ]] ;;
     editor) [[ $value != *[[:cntrl:]]* ]] ;;
     background) td_in_list "$value" solid terminal ;;
-    banner) td_in_list "$value" auto big small none || [[ $value == /* || $value == \~/* ]] ;;
+    banner) td_in_list "$value" auto big medium small none || [[ $value == /* || $value == \~/* ]] ;;
     logo) [[ -z $value || $value == /* || $value == \~/* ]] && [[ $value != *[[:cntrl:]]* ]] ;;
     logo_render) td_in_list "$value" auto kitty blocks ;;
     tagline) [[ $value != *[[:cntrl:]]* ]] && ((${#value} <= 120)) ;;

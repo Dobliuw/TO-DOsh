@@ -8,7 +8,7 @@
 declare -ga TD_CMD_ORDER=()
 declare -gA TD_CMD_SUMMARY=() TD_CMD_GROUP=()
 # Order of the groups in `todosh help`.
-readonly TD_CMD_GROUPS=(Tasks Status Focus History Trash General)
+readonly TD_CMD_GROUPS=(Tasks Status Focus History Trash Sync General)
 
 # Global output options, set by td_main. These globals are read by other
 # modules (SC2034 is disabled for this file because of that).
@@ -170,7 +170,7 @@ td_help_config() {
     "  background          solid | terminal: paint the theme background in the" \
     "                      interface, or keep the terminal's (and its" \
     "                      transparency) (default: solid)" \
-    "  banner              Title art in the interface: auto, big, small, none, or" \
+    "  banner              Title art in the interface: auto, big, medium, small, none, or" \
     "                      the path of a text file with your own art" \
     "  logo                Path of a logo next to the title: a text file, or an" \
     "                      image (png, jpg, gif, webp; needs chafa)" \

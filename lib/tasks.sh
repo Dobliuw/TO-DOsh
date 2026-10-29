@@ -158,7 +158,7 @@ td_task_add() {
 }
 
 _td_task_add_locked() {
-  local title=$1 project=$2 priority=$3 parent=$4 description=$5 due=$6 id now record
+  local title=$1 project=$2 priority=$3 parent=$4 description=$5 due=$6 id now uuid record
   shift 6
   if [[ -n $parent ]]; then
     _td_check_parent "$parent" || return
@@ -177,6 +177,9 @@ _td_task_add_locked() {
       due: (if $due == "" then null else $due end), created: $now, updated: $now, closed: null,
       history: [{type: "event", at: $now, event: "created"}]
     }' --args "$@") || return
+  if td_gen_uuid uuid 2>/dev/null && [[ -n $uuid ]]; then
+    record=$(jq -c --arg uuid "$uuid" '. + {uuid: $uuid}' <<<"$record") || return
+  fi
   td_task_write "$id" "$record" || return
   TD_RESULT=$id
 }

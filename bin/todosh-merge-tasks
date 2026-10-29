@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# todosh-merge-tasks — git merge driver for todosh JSON data files.
+#
+# Registered by 'todosh sync init' and called by git as:
+#   todosh-merge-tasks %P %O %A %B
+# where:
+#   %P = virtual path of the file being merged (e.g. "tasks/42.json")
+#   %O = ancestor version (temp file, read-only)
+#   %A = our version    (temp file, written in-place with the merged result)
+#   %B = their version  (temp file, read-only)
+#
+# Exit 0  → clean merge written to %A; git uses it as the result.
+# Exit 1  → conflict; git marks the file as unmerged.
+#
+# Merge strategy per file type:
+#   tasks/*.json / trash/*.json
+#       Take the record (all fields) from whichever side has a newer 'updated'
+#       timestamp. Always union the 'history' arrays from both sides, sorted
+#       by 'at' and deduplicated.
+#   meta.json
+#       Take the maximum 'next_id' and 'schema' from either side.
+#   projects.json
+#       Union of both 'projects' arrays (sorted, unique).
+
+set -o nounset -o pipefail
+
+if (($# != 4)); then
+  printf 'Usage: todosh-merge-tasks PATH ANCESTOR OURS THEIRS\n' >&2
+  exit 2
+fi
+
+path=$1 ancestor=$2 ours=$3 theirs=$4
+
+command -v jq >/dev/null 2>&1 || {
+  printf 'todosh-merge-tasks: jq not found\n' >&2
+  exit 1
+}
+
+for f in "$ancestor" "$ours" "$theirs"; do
+  [[ -r $f ]] || {
+    printf 'todosh-merge-tasks: cannot read %s\n' "$f" >&2
+    exit 1
+  }
+done
+
+case $path in
+  tasks/*.json | trash/*.json)
+    # 3-way field merge:
+    #   - If only one side changed a field relative to the ancestor: use it.
+    #   - If both sides changed the same field: last-updated-wins.
+    #   - 'updated': always take the max from either side.
+    #   - 'history': always union both sides (deduplicated, sorted by .at).
+    merged=$(jq -cn \
+      --slurpfile a "$ancestor" \
+      --slurpfile o "$ours" \
+      --slurpfile t "$theirs" '
+      ($a[0]) as $anc    |
+      ($o[0]) as $ours   |
+      ($t[0]) as $theirs |
+      ([$anc, $ours, $theirs | keys[]] | unique) as $all_keys |
+      reduce $all_keys[] as $k ($anc;
+        if $k == "history" then .
+        elif $k == "updated" then
+          .[$k] = ([ ($ours[$k] // ""), ($theirs[$k] // "") ] | max)
+        elif (($ours[$k] // null) == ($anc[$k] // null))
+          and (($theirs[$k] // null) == ($anc[$k] // null)) then .
+        elif (($ours[$k] // null) != ($anc[$k] // null))
+          and (($theirs[$k] // null) == ($anc[$k] // null)) then
+          .[$k] = $ours[$k]
+        elif (($ours[$k] // null) == ($anc[$k] // null))
+          and (($theirs[$k] // null) != ($anc[$k] // null)) then
+          .[$k] = $theirs[$k]
+        else
+          .[$k] = (if ($ours.updated // "") >= ($theirs.updated // "")
+                   then $ours[$k] else $theirs[$k] end)
+        end
+      )
+      | .history = (
+          (($ours.history  // []) + ($theirs.history // []))
+          | unique_by([.at, .type, (.event // ""), (.text // "")])
+          | sort_by(.at)
+        )
+    ') || exit 1
+    printf '%s\n' "$merged" > "$ours"
+    exit 0
+    ;;
+
+  meta.json)
+    merged=$(jq -cn \
+      --slurpfile o "$ours" \
+      --slurpfile t "$theirs" '
+      ($o[0]) as $ours   |
+      ($t[0]) as $theirs |
+      {
+        schema:  ([($ours.schema  // 1), ($theirs.schema  // 1)] | max),
+        next_id: ([($ours.next_id // 1), ($theirs.next_id // 1)] | max),
+        created: ($ours.created // $theirs.created)
+      }
+    ') || exit 1
+    printf '%s\n' "$merged" > "$ours"
+    exit 0
+    ;;
+
+  projects.json)
+    merged=$(jq -cn \
+      --slurpfile o "$ours" \
+      --slurpfile t "$theirs" '
+      {projects: (
+        (($o[0].projects // []) + ($t[0].projects // []))
+        | unique | sort
+      )}
+    ') || exit 1
+    printf '%s\n' "$merged" > "$ours"
+    exit 0
+    ;;
+
+  *)
+    # Unknown file — let git handle it as a standard text conflict.
+    exit 1
+    ;;
+esac
