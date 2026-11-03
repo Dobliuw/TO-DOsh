@@ -2,10 +2,6 @@
   <img src="./assets/todosh.png" alt="TODOsh logo" width="420">
 </p>
 <h1 align="center">TO-DOsh</h1>
-<p align="center">
-  <b>Tracking for tasks TO DO from <code>bash</code>.</b><br>
-</p>
-
 
 ------
 # TODOSH
