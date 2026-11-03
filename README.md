@@ -1,3 +1,13 @@
+<p align="center">
+  <img src="./assets/todosh.png" alt="TODOsh logo" width="420">
+</p>
+<h1 align="center">TO-DOsh</h1>
+<p align="center">
+  <b>Tracking for tasks TO DO from <code>bash</code>.</b><br>
+</p>
+
+
+------
 # TODOSH
 Welcome, this is one of my first public vibe coded tools. It's created for handle TO DO tasks from and for terminal users. I've a full bash based setup and I really like the TUI tools, so I created one (Claude does) with my help to that, just handle projects, sub-projects, tasks, states and more.
 
