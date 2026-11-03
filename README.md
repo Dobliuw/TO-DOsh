@@ -1,7 +1,6 @@
 <p align="center">
   <img src="./assets/todosh.png" alt="TODOsh logo" width="420">
 </p>
-<h1 align="center">TO-DOsh</h1>
 
 ------
 # TODOSH
