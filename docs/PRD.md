@@ -165,3 +165,5 @@ translations.
 - 2026-10-28 — Banner in the TUI details panel when there is room: title art
   (`banner = auto|big|small|none|FILE`), optional logo (`logo = FILE`, text or
   image rendered by the optional `chafa`), `tagline`.
+- 2026-11-03 — Banner: `auto` uses the medium title art (small when narrow),
+  never big; the logo is drawn larger (10 rows) with the title centered beside it.

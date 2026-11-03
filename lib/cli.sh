@@ -170,8 +170,9 @@ td_help_config() {
     "  background          solid | terminal: paint the theme background in the" \
     "                      interface, or keep the terminal's (and its" \
     "                      transparency) (default: solid)" \
-    "  banner              Title art in the interface: auto, big, medium, small, none, or" \
-    "                      the path of a text file with your own art" \
+    "  banner              Title art in the interface: auto (medium, or small" \
+    "                      when narrow), big, medium, small, none, or the path" \
+    "                      of a text file with your own art" \
     "  logo                Path of a logo next to the title: a text file, or an" \
     "                      image (png, jpg, gif, webp; needs chafa)" \
     "  logo_render         auto | kitty | blocks: draw image logos with kitty's" \

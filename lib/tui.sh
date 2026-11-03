@@ -636,25 +636,17 @@ _tui_banner_art() {
   case $choice in
     none) return 0 ;;
     big | medium | small) file=$TD_SHARE_DIR/banners/$choice.txt ;;
-    auto) file=$TD_SHARE_DIR/banners/big.txt ;;
+    auto) file=$TD_SHARE_DIR/banners/medium.txt ;;
     *) file=$(_tui_expand_path "$choice") ;;
   esac
   [[ -f $file && -r $file ]] || return 0
   mapfile -t lines <"$file"
   for line in "${lines[@]}"; do ((${#line} > max)) && max=${#line}; done
-  # auto: big → medium → small, using the largest that fits the width.
+  # auto: medium, or small when medium does not fit (big only on request).
   if ((max > width)) && [[ $choice == auto ]]; then
-    local medium_file="$TD_SHARE_DIR/banners/medium.txt"
-    if [[ -f $medium_file && -r $medium_file ]]; then
-      mapfile -t lines <"$medium_file"
-      max=0
-      for line in "${lines[@]}"; do ((${#line} > max)) && max=${#line}; done
-    fi
-    if ((max > width)); then
-      mapfile -t lines <"$TD_SHARE_DIR/banners/small.txt"
-      max=0
-      for line in "${lines[@]}"; do ((${#line} > max)) && max=${#line}; done
-    fi
+    mapfile -t lines <"$TD_SHARE_DIR/banners/small.txt"
+    max=0
+    for line in "${lines[@]}"; do ((${#line} > max)) && max=${#line}; done
   fi
   ((max <= width)) || return 0
   # Box-drawing art needs Unicode.
@@ -842,16 +834,16 @@ _tui_banner_build() {
 
   local -a art=() logo=()
   local line lw=0 aw=0 i n maxlogo
-  # Choose the title art first, for the full width, so the big art wins. The
-  # logo then takes only the columns left beside it (shrunk to fit), or is
-  # dropped when too few remain — the title never gets pushed down to small.
+  # Choose the title art first, for the full width. The logo then takes the
+  # columns left beside it (shrunk to fit), or is dropped when too few remain.
+  # The title is vertically centered against the (taller) logo.
   # Margins: 2 on the left, 1 on the right, 2 between logo and title.
   mapfile -t art < <(_tui_banner_art "$((width - 3))")
   for line in "${art[@]}"; do ((${#line} > aw)) && aw=${#line}; done
   maxlogo=$((width - 3 - aw - 2))
   ((maxlogo < 6)) && maxlogo=0
   if ((maxlogo > 0)); then
-    _tui_logo_prepare 8 "$maxlogo"
+    _tui_logo_prepare 10 "$maxlogo"
     logo=("${TUI_LOGO_LINES[@]}")
     lw=$TUI_LOGO_W
   else
@@ -883,7 +875,7 @@ _tui_banner_build() {
   local block=$(((lw ? lw + 2 : 0) + aw))
   local left=$((width - block - 1))
   ((left < 2)) && left=2
-  local r plain
+  local r plain a off=$(((rows - ${#art[@]}) / 2))
   for ((r = 0; r < rows; r++)); do
     _tl_start "$width"
     _tl_gap "$left"
@@ -902,7 +894,8 @@ _tui_banner_build() {
       TLW=$((TLW + plain))
       _tl_gap $((lw - plain + 2))
     fi
-    [[ -n ${art[r]:-} ]] && _tl_add "${colors[r]}${TD_TC[bold]}" "${art[r]}"
+    a=$((r - off))
+    ((a >= 0)) && [[ -n ${art[a]:-} ]] && _tl_add "${colors[a]}${TD_TC[bold]}" "${art[a]}"
     _tl_end
     TUI_BANNER+=("$TL")
   done

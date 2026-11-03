@@ -429,17 +429,21 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   _tui_select_group docs
   TUI_BANNER_KEY=""
   run frame 40 205
-  local art='$$$$$$$$\  $$$$$$'
+  local art='██████ ▄▄▄'
   [[ $output == *"$art"* ]]
   [[ ${lines[37]} == *"My tagline │"* || ${lines[37]} == *"My tagline"* ]]
-  # Narrow: the compact art; no room: nothing.
-  run frame 40 120
-  [[ $output == *"┌┬┐┌─┐"* ]]
+  # auto never picks the big art: medium, or small when medium does not fit.
+  [[ $(_tui_banner_art 100) == "██████ ▄▄▄"* ]]
+  [[ $(_tui_banner_art 40) == "░▀█▀░█▀█"* ]]
+  TD_CONF["banner"]=big
+  [[ $(_tui_banner_art 100) == "░██████████"* ]]
+  TD_CONF["banner"]=auto
+  # No room: nothing.
   run frame 14 120
-  [[ $output != *"┌┬┐┌─┐"* && $output != *"My tagline"* ]]
+  [[ $output != *"$art"* && $output != *"░▀█▀░█▀█"* && $output != *"My tagline"* ]]
   TD_CONF["banner"]=none TD_CONF["tagline"]=""
   run frame 40 205
-  [[ $output != *'$$$$$$$$'* ]]
+  [[ $output != *"$art"* ]]
 }
 
 @test "banner: a text logo, and an image logo through chafa" {
@@ -447,7 +451,7 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   TD_CONF["logo"]=$BATS_TEST_TMPDIR/logo.txt
   _tui_select_group docs
   run frame 40 205
-  [[ $output == *"LOGO1  "*'$$$$$$$$'* ]]
+  [[ $output == *"LOGO1  ██████ ▄▄▄"* ]]
   # A fake chafa: prints colored blocks plus a cursor sequence to be dropped.
   mkdir -p "$BATS_TEST_TMPDIR/bin"
   # It only answers when called with --probe=off and no terminal on stdin:
@@ -463,7 +467,7 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   TD_CONF["logo_render"]=blocks
   PATH="$BATS_TEST_TMPDIR/bin:$PATH"
   run frame 40 205
-  [[ $output == *"####  "*'$$$$$$$$'* ]]
+  [[ $output == *"####  ██████ ▄▄▄"* ]]
   [[ $(_tui_frame) != *$'\e[?25l'* ]]
   # The width is still exact.
   local line
@@ -541,14 +545,16 @@ fake_ffmpeg() {
   TUI_BANNER_KEY=""
   _tui_banner_build 90
   [ -n "$TUI_LOGO_TX" ]
-  local line plain
+  local line plain d
   for line in "${TUI_BANNER[@]}"; do
     plain=${line//$'\e['*([0-9;])m/}
-    plain=${plain//[$'̅̍̎̐̒̽̾̿͆͊͋͌͐͑͒͗']/}
+    for d in "${TUI_KITTY_DIACRITICS[@]}"; do plain=${plain//"$d"/}; done
     [ "${#plain}" -eq 90 ]
   done
-  # The big title fits next to a 16-column logo in 90 columns.
-  [[ ${TUI_BANNER[0]} == *'$$$$$$$$'* ]]
+  # The medium title fits next to a 20-column (10-row) logo in 90 columns,
+  # vertically centered against it.
+  [ "${#TUI_BANNER[@]}" -eq 11 ]
+  [[ ${TUI_BANNER[3]} == *'██████ ▄▄▄'* ]]
   TUI_LOGO_SENT=0 TUI_BASE="" TUI_LAYERS=()
   unset -f _tui_paint
   source "$TD_ROOT/lib/tui_ui.sh"

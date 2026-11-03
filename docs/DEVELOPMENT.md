@@ -19,7 +19,7 @@
 | `lib/tui_ui.sh` | TUI building blocks: line composition, layers, keys, text editing, dialogs, pickers, forms |
 | `lib/tui.sh` | The interface: screen, details, actions, task form, palette, settings |
 | `themes/` | Built-in themes (`key = #rrggbb`) |
-| `banners/` | Built-in title art for the TUI banner (`big.txt`, `small.txt`) |
+| `banners/` | Built-in title art for the TUI banner (`big.txt`, `medium.txt`, `small.txt`) |
 | `tests/` | bats test suites; `test_helper.bash` isolates each test |
 
 The CLI and the TUI must only call business functions (`tasks.sh`, later

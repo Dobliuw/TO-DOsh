@@ -49,7 +49,8 @@ selected project.
 
 When there is room, the details panel shows a banner at the bottom: title art,
 your logo and a tagline. Settings (`,` in the interface, or `todosh config set`):
-`banner` (auto, big, small, none, or a text file with your art), `logo` (a text
+`banner` (auto = medium, or small when narrow; big, medium, small, none, or a
+text file with your art), `logo` (a text
 file, or an image such as `~/logo.png`), `logo_render` and `tagline`. In kitty an
 image logo is drawn sharp with kitty's graphics protocol (converted with
 `ffmpeg` when it is not a PNG); elsewhere it becomes colored blocks through the
