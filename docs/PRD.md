@@ -167,3 +167,5 @@ translations.
   image rendered by the optional `chafa`), `tagline`.
 - 2026-11-03 — Banner: `auto` uses the medium title art (small when narrow),
   never big; the logo is drawn larger (10 rows) with the title centered beside it.
+- 2026-11-03 — `logo = auto` (the default) shows the bundled `assets/todosh.png`
+  (installed to `share/todosh/assets/`); `logo = none` hides it.

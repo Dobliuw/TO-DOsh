@@ -617,17 +617,17 @@ declare -ga PK_ITEMS=() PK_VIEW=() TUI_PICKED_LIST=()
 # Keys of PK_ON are "k" + value: an associative array cannot have an empty key.
 declare -gA PK_ON=()
 PK_TITLE="" PK_FILTER="" PK_FCUR=0 PK_SEL=0 PK_TOP=0 PK_MULTI=0 PK_CREATE=0
-PK_ONMOVE="" TUI_PICKED=""
+PK_ONMOVE="" TUI_PICKED="" PK_TOUCHED=0
 
 # _tui_pick TITLE ITEM... — choose one item; its VALUE goes to TUI_PICKED.
 # Set PK_MULTI, PK_CREATE, PK_ONMOVE (function called with the highlighted
 # value), and TUI_PICK_INIT (initially highlighted / selected values,
 # space-separated) before calling. Returns 1 when cancelled.
-TUI_PICK_INIT=""
+TUI_PICK_INIT="" TUI_PICK_FILTER=""
 _tui_pick() {
   PK_TITLE=$1
   shift
-  PK_ITEMS=("$@") PK_FILTER="" PK_FCUR=0 PK_SEL=0 PK_TOP=0 PK_ON=()
+  PK_ITEMS=("$@") PK_FILTER=$TUI_PICK_FILTER PK_FCUR=${#TUI_PICK_FILTER} PK_SEL=0 PK_TOP=0 PK_ON=() PK_TOUCHED=0
   local v init=" $TUI_PICK_INIT "
   local item
   for item in "${PK_ITEMS[@]}"; do
@@ -636,6 +636,15 @@ _tui_pick() {
       PK_ON[k$v]=1
     fi
   done
+  # Selected values that are not offered yet (e.g. tags created in this form
+  # but not saved) must stay visible and selected.
+  if ((PK_MULTI)); then
+    for v in $TUI_PICK_INIT; do
+      [[ -v PK_ON[k$v] ]] && continue
+      PK_ON[k$v]=1
+      PK_ITEMS=("$v"$'\x1f'"$v"$'\x1f'"new"$'\x1f'"green" "${PK_ITEMS[@]}")
+    done
+  fi
   _tui_pick_filter
   if ((! PK_MULTI)); then
     local i
@@ -645,7 +654,7 @@ _tui_pick() {
   fi
   local ok=1
   _tui_modal _tui_pick_layer _tui_pick_key || ok=0
-  TUI_PICK_INIT="" PK_ONMOVE=""
+  TUI_PICK_INIT="" TUI_PICK_FILTER="" PK_ONMOVE=""
   local multi=$PK_MULTI
   PK_MULTI=0 PK_CREATE=0
   ((ok)) || return 1
@@ -761,11 +770,19 @@ _tui_pick_key() {
           # Enter with filter: check the item, clear the filter, stay open
           # so the user can keep adding more items without closing the picker.
           PK_ON[k$v]=1
+          # A created value is not in PK_ITEMS: add it so it stays listed.
+          local known=0 item
+          for item in "${PK_ITEMS[@]}"; do
+            [[ ${item%%$'\x1f'*} == "$v" ]] && known=1 && break
+          done
+          ((known)) || PK_ITEMS+=("$v"$'\x1f'"$v"$'\x1f'"new"$'\x1f'"green")
           PK_FILTER="" PK_FCUR=0
           _tui_pick_filter
           return 0
         fi
-        # Enter with empty filter: confirm and close.
+        # Enter with empty filter: confirm and close. With nothing checked,
+        # the highlighted item is the choice.
+        ((${#PK_ON[@]} || PK_TOUCHED)) || PK_ON[k$v]=1
         return 1
       fi
       TUI_PICKED=$v
@@ -776,6 +793,7 @@ _tui_pick_key() {
         ((n > 0)) || return 0
         v=${PK_VIEW[PK_SEL]%%$'\x1f'*}
         if [[ -v PK_ON[k$v] ]]; then unset "PK_ON[k$v]"; else PK_ON[k$v]=1; fi
+        PK_TOUCHED=1
         return 0
       fi
       _tui_edit PK_FILTER PK_FCUR space && _tui_pick_filter
@@ -960,6 +978,8 @@ _tui_form_key() {
       ;;
     pick)
       if [[ $1 == enter || $1 == space ]] || _tui_is_char "$1"; then
+        # A typed character starts the picker's filter instead of being lost.
+        [[ $1 != enter && $1 != space ]] && TUI_PICK_FILTER=$1
         "${F_OPTS[$key]}" "$key"
       fi
       ;;

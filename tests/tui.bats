@@ -184,7 +184,7 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
 
 @test "new task form: fields, pickers and focus, without any syntax" {
   _tui_select_group docs
-  keys w:"Write the report" tab tab right tab w:fri tab enter w:new enter tab tab tab space ctrl-s
+  keys w:"Write the report" tab tab right tab w:fri tab enter w:new enter enter tab tab tab space ctrl-s
   _tui_task_form new ""
   local id=5
   [ "$(task $id '[.title, .project, .priority, .due != null, (.tags | join(","))] | join("|")')" = \
@@ -249,6 +249,50 @@ task() { jq -r "$2" "$HOME/.local/share/todosh/tasks/$1.json"; }
   _tui_pick "Tags" "${TUI_ITEMS[@]}"
   [ "${TUI_PICKED_LIST[*]}" = "home" ] || [ "${TUI_PICKED_LIST[*]}" = "network home" ] ||
     { echo "got: ${TUI_PICKED_LIST[*]}"; return 1; }
+}
+
+@test "multi picker: created and unsaved tags stay listed and selected" {
+  _tui_tags_items
+  # Two new tags in one go: both are listed (not only in PK_ON) and returned.
+  PK_MULTI=1 PK_CREATE=1
+  keys w:alpha enter w:beta enter enter
+  _tui_pick "Tags" "${TUI_ITEMS[@]}"
+  [ "${TUI_PICKED_LIST[*]}" = "alpha beta" ]
+  # Reopening with tags that exist only in the form keeps them selected.
+  _tui_tags_items
+  TUI_PICK_INIT="alpha beta" PK_MULTI=1 PK_CREATE=1
+  keys enter
+  _tui_pick "Tags" "${TUI_ITEMS[@]}"
+  [ "${TUI_PICKED_LIST[*]}" = "beta alpha" ] || [ "${TUI_PICKED_LIST[*]}" = "alpha beta" ]
+  # With nothing checked, Enter takes the highlighted tag.
+  _tui_tags_items
+  PK_MULTI=1
+  keys enter
+  _tui_pick "Tags" "${TUI_ITEMS[@]}"
+  [ "${TUI_PICKED_LIST[*]}" = "network" ]
+}
+
+@test "new task form: create two tags from the picker" {
+  _tui_select_group docs
+  keys w:Tagged tab tab tab tab enter w:alpha enter w:gamma enter enter ctrl-s
+  _tui_task_form new ""
+  [ "$(task 5 '.tags | join(",")')" = "alpha,gamma" ]
+}
+
+@test "list scroll offset survives frames: moving up does not pin the cursor" {
+  local i
+  for i in $(seq 1 40); do todosh add "Filler $i" p:docs >/dev/null; done
+  _tui_reload
+  # Narrow: list only, so this checks the scrolling alone.
+  TUI_ROWS=20 TUI_COLS=60 TUI_SEL=0 TUI_TOP=0
+  local last=$((${#U_KIND[@]} - 1))
+  TUI_SEL=$last
+  _tui_base_build
+  local top=$TUI_TOP
+  [ "$top" -gt 0 ]
+  TUI_SEL=$((last - 5))
+  _tui_base_build
+  [ "$TUI_TOP" -eq "$top" ]
 }
 
 @test "confirm dialog: keys and buttons" {
@@ -563,4 +607,17 @@ fake_ffmpeg() {
   _tui_paint >/dev/null
   run _tui_paint
   [[ $output != *$'\e_G'* ]]
+}
+
+@test "logo: auto is the bundled todosh logo, none hides it" {
+  [ "${TD_CONF_DEFAULTS[logo]}" = auto ]
+  TD_CONF["logo"]=auto
+  [ "$(_tui_logo_file)" = "$TD_SHARE_DIR/assets/todosh.png" ]
+  [ -r "$(_tui_logo_file)" ]
+  TD_CONF["logo"]=none
+  run _tui_logo_file
+  [ "$status" -eq 1 ]
+  td_config_valid logo auto
+  td_config_valid logo none
+  refute td_config_valid logo relative/path.png
 }

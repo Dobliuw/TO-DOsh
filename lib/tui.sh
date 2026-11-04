@@ -259,6 +259,16 @@ _tui_collapsed() {
 # --- main screen -----------------------------------------------------------------
 
 # _tui_base_build — render the main screen into TUI_BASE (positioned lines).
+# _tui_scroll ROWS — keep TUI_SEL inside the visible window of the list,
+# moving TUI_TOP only when the cursor leaves it.
+_tui_scroll() {
+  local B=$1
+  ((TUI_SEL < TUI_TOP)) && TUI_TOP=$TUI_SEL
+  ((TUI_SEL >= TUI_TOP + B)) && TUI_TOP=$((TUI_SEL - B + 1))
+  ((TUI_TOP < 0)) && TUI_TOP=0
+  return 0
+}
+
 _tui_base_build() {
   local frame row=1 line
   # The frame is rendered in a subshell; build the cached parts here first so
@@ -267,6 +277,9 @@ _tui_base_build() {
   if ((TUI_RW > 0 && TUI_COLS >= 50 && TUI_ROWS >= 12)); then
     _tui_detail_build "$TUI_RW" $((TUI_ROWS - 4))
   fi
+  # The scroll offset must also persist across frames, or moving up would
+  # keep the cursor pinned to the bottom row.
+  _tui_scroll $((TUI_ROWS - 4))
   frame=$(_tui_frame)
   TUI_BASE=""
   while IFS= read -r line; do
@@ -326,9 +339,7 @@ _tui_frame() {
 
   # Body.
   local n=${#U_KIND[@]} row left right
-  ((TUI_SEL < TUI_TOP)) && TUI_TOP=$TUI_SEL
-  ((TUI_SEL >= TUI_TOP + B)) && TUI_TOP=$((TUI_SEL - B + 1))
-  ((TUI_TOP < 0)) && TUI_TOP=0
+  _tui_scroll "$B"
   ((TUI_RW > 0)) && _tui_detail_build "$TUI_RW" "$B"
   for ((row = 0; row < B; row++)); do
     i=$((TUI_TOP + row))
@@ -616,11 +627,22 @@ _tui_expand_path() {
   fi
 }
 
-# _tui_logo_check — tell, once, why a configured logo cannot be shown.
+# _tui_logo_file — print the logo file to draw: the bundled one for "auto",
+# the configured path otherwise. Fails for "none" (or empty).
+_tui_logo_file() {
+  case ${TD_CONF[logo]:-} in
+    "" | none) return 1 ;;
+    auto) printf '%s\n' "$TD_SHARE_DIR/assets/todosh.png" ;;
+    *) _tui_expand_path "${TD_CONF[logo]}" ;;
+  esac
+}
+
+# _tui_logo_check — tell, once, why a configured logo cannot be shown. The
+# bundled logo (auto) is just skipped when it cannot be drawn.
 _tui_logo_check() {
   local file
-  [[ -n ${TD_CONF[logo]:-} ]] || return 0
-  file=$(_tui_expand_path "${TD_CONF[logo]}")
+  [[ ${TD_CONF[logo]:-} == auto ]] && return 0
+  file=$(_tui_logo_file) || return 0
   if [[ ! -r $file ]]; then
     _tui_toast error "Logo not found: ${TD_CONF[logo]}"
   elif [[ ${file,,} == *.@(png|jpg|jpeg|gif|webp|bmp) ]] && ! command -v chafa >/dev/null 2>&1; then
@@ -803,8 +825,7 @@ _tui_logo_blocks() {
 _tui_logo_prepare() {
   local rows=$1 maxcols=${2:-0} file cache=${XDG_CACHE_HOME:-$HOME/.cache}/todosh line
   TUI_LOGO_LINES=() TUI_LOGO_W=0 TUI_LOGO_TX=""
-  [[ -n ${TD_CONF[logo]:-} ]] || return 0
-  file=$(_tui_expand_path "${TD_CONF[logo]}")
+  file=$(_tui_logo_file) || return 0
   [[ -f $file && -r $file ]] || return 0
   case ${file,,} in
     *.png | *.jpg | *.jpeg | *.gif | *.webp | *.bmp)
@@ -1711,7 +1732,7 @@ _tui_settings() {
   local banner=${TD_CONF[banner]}
   td_in_list "$banner" auto big small none || banner=auto
   _tui_form_add banner segment "Banner" "$banner" "auto big small none"
-  _tui_form_add logo text "Logo" "${TD_CONF[logo]}" "" "path, e.g. ~/logo.png (needs chafa) or ~/logo.txt"
+  _tui_form_add logo text "Logo" "${TD_CONF[logo]}" "" "auto (bundled), none, or a path: ~/logo.png, ~/logo.txt"
   _tui_form_add logo_render segment "Logo as" "${TD_CONF[logo_render]}" "auto kitty blocks"
   _tui_form_add tagline text "Tagline" "${TD_CONF[tagline]}" "" "one line under the title"
   _tui_form_add save button "Save" "" submit

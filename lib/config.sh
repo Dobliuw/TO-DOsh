@@ -17,7 +17,7 @@ declare -grA TD_CONF_DEFAULTS=(
   [editor]=""
   [background]=solid
   [banner]=auto
-  [logo]=""
+  [logo]=auto
   [logo_render]=auto
   [tagline]="To-do tracking from & for the terminal."
 )
@@ -34,7 +34,7 @@ td_config_valid() {
     editor) [[ $value != *[[:cntrl:]]* ]] ;;
     background) td_in_list "$value" solid terminal ;;
     banner) td_in_list "$value" auto big medium small none || [[ $value == /* || $value == \~/* ]] ;;
-    logo) [[ -z $value || $value == /* || $value == \~/* ]] && [[ $value != *[[:cntrl:]]* ]] ;;
+    logo) { [[ -z $value || $value == auto || $value == none || $value == /* || $value == \~/* ]]; } && [[ $value != *[[:cntrl:]]* ]] ;;
     logo_render) td_in_list "$value" auto kitty blocks ;;
     tagline) [[ $value != *[[:cntrl:]]* ]] && ((${#value} <= 120)) ;;
     *) return 1 ;;

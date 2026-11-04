@@ -173,8 +173,9 @@ td_help_config() {
     "  banner              Title art in the interface: auto (medium, or small" \
     "                      when narrow), big, medium, small, none, or the path" \
     "                      of a text file with your own art" \
-    "  logo                Path of a logo next to the title: a text file, or an" \
-    "                      image (png, jpg, gif, webp; needs chafa)" \
+    "  logo                Logo next to the title: auto (the todosh logo), none," \
+    "                      or the path of a text file or an image (png, jpg," \
+    "                      gif, webp; outside kitty images need chafa)" \
     "  logo_render         auto | kitty | blocks: draw image logos with kitty's" \
     "                      graphics protocol (sharp), or as chafa blocks" \
     "  tagline             One line under the title" \
